@@ -20,91 +20,89 @@
 
 ## 截图
 
-### 数据上传
-
-![数据上传](screenshots/00_data_upload.png)
-
-侧边栏上传 CSV，系统自动对齐券表和销售表。支持按会员等级、年龄段、时间范围筛选，可保存场景书签一键切换。
-
 ### 战情摘要 — 指挥中心
 
-![战情摘要 - 告警与KPI](screenshots/01_executive_summary_alerts_kpi.png)
+![战情摘要](screenshots/01_executive_summary_alerts_kpi.png)
 
-顶部三级告警横幅（严重 / 预警 / 健康，红黄绿圆角胶囊），4 张核心 KPI 卡片，每张底部带 AI 分析注解。
-
-![战情摘要 - 趋势与结构](screenshots/02_executive_summary_trend_structure.png)
-
-双轴趋势图 + 券种结构环形图 + 业态销售额条形图，一页纵览全局。
+首页指挥中心。顶部三级告警横幅（严重 / 预警 / 健康），4 张核心 KPI 卡片（ROI、总销售额、核销转化率、会员贡献占比），下方趋势图与成本结构环形图。
 
 ### KPI 总览
 
-![KPI总览 - 指标卡片](screenshots/03_kpi_overview_cards.png)
+![KPI 总览](screenshots/04_kpi_overview_cards.png)
 
-8 张 KPI 详情卡片，含数值、单位、同比/环比变化箭头、数据来源提示。模拟模式下展示原始值 vs 模拟值对比。
+8 张 KPI 详情卡片，含数值、单位、同比/环比变化箭头、数据来源提示。
 
-![KPI总览 - 度量值明细表](screenshots/04_kpi_overview_table.png)
+![KPI 总览 + AI 分析](screenshots/13_kpi_overview_with_ai.png)
 
-度量值字典表：列出每个指标的 Key、公式、当前值、单位、状态。
+模拟模式下的 KPI 卡片，顶部展示 AI 对该页面的整体诊断摘要。
 
 ### 投入产出结构
 
-![投入产出结构](screenshots/05_cost_revenue_structure.png)
+![投入产出结构](screenshots/05_cost_revenue.png)
 
 左侧券种环形图（成本侧）vs 右侧业态销售额条形图（产出侧），结构性失衡一目了然。
 
 ### 趋势滞后分析
 
-![趋势滞后分析 - 时序图](screenshots/06_trend_lag_chart.png)
+![趋势滞后](screenshots/06_trend_lag_correlation.png)
 
-可调粒度（日/周/月）双轴时间序列，发券量、核销量、销售额三条曲线叠加。
+Pearson 相关系数在 0~30 天滞后窗口上自动计算，找出最优转化周期（当前为 3 天），下方数据表展示每个滞后天数的相关强度。
 
-![趋势滞后分析 - 相关与异常](screenshots/07_trend_lag_correlation_anomaly.png)
+![趋势滞后 + 模拟](screenshots/16_trend_lag_with_simulation.png)
 
-Pearson 相关系数在 0~30 天滞后窗口上自动计算，找出最优转化周期。IsolationForest 自动标记异常时间点。
+模拟模式下的趋势分析，绿色实线为发券量原始曲线，灰色虚线为模拟后曲线。
 
 ### 客群价值诊断
 
-![客群诊断 - 四象限](screenshots/08_cohort_quadrant_matrix.png)
+![客群四象限](screenshots/02_cohort_quadrant_matrix.png)
 
-四象限散点图，按规则自动着色：红（券效耗损型）、金（自然高价值型）、绿（高ROI转化型）、灰（常规基石型），每个象限附带策略建议。
+四象限散点图，按规则自动着色：红（券效耗损型）、金（自然高价值型）、绿（高 ROI 转化型）、灰（常规基石型）。
 
-![客群诊断 - 聚类与详情](screenshots/09_cohort_clustering_detail.png)
+![客群四象限 + 标签触发条件](screenshots/07_cohort_quadrant_with_rules.png)
 
-KMeans 自动聚类 + 客群详情表（人均领券、核销率、客单价、总销售额），支持按会员等级 × 年龄段交叉下钻。
+完整的四象限矩阵 + 标签触发条件表（每条规则的阈值）+ 客群分布概览（建议策略）。
+
+![客群明细 Top 5](screenshots/03_cohort_detail_table.png)
+
+按销售额 Top 5 客群明细表，含发券量、核销量、核销率、客单价、标签。
+
+![客群详情](screenshots/08_cohort_top5_detail.png)
+
+Top 5 客群分组规则表 + 完整客群记录（23 条）。
 
 ### 智能诊室
 
-![智能诊室 - AI诊断](screenshots/10_insight_room_ai_cards.png)
+![智能诊室 - 本地模式](screenshots/09_insight_local_mode.png)
 
-DeepSeek 大模型自动生成诊断卡片：严重告警、预警提示、信息摘要、优化建议。每条建议可一键加入模拟参数。
+默认本地模式：智能诊室页面提示「LLM 模式专属功能，请点击右上角模式切换按钮后启用」。这是数据隐私优先的设计——系统默认完全不调用外部 API。
 
-![智能诊室 - AI追问](screenshots/11_insight_room_chat.png)
+![智能诊室 - LLM 模式](screenshots/10_insight_llm_diagnostic_cards.png)
 
-自由多轮追问，基于当前数据上下文实时回答。
+切换到 LLM 模式后，DeepSeek 大模型自动生成四类诊断卡片：严重告警、预警提示、信息摘要、优化建议。每条建议可一键加入模拟参数。
 
-![智能诊室 - Agent面板](screenshots/12_insight_room_agent.png)
+![AI 智能问答](screenshots/11_ai_chat_panel.png)
 
-Agent 控制面板：手动触发巡检、导出 Markdown 报告、发送告警邮件、查看操作历史。
+基于当前数据上下文的自由多轮追问，预置常用追问（你能做什么？会员贡献占比多？为什么停车券转化这么低？）。
+
+![战情摘要 + AI 综合诊断](screenshots/12_executive_with_ai_summary.png)
+
+战情摘要页顶部展示 DeepSeek 对整体战情的综合诊断摘要（当前 ROI 表现、关键发现、建议）。
 
 ### 模拟推演
 
-![模拟模式 - KPI对比](screenshots/13_simulation_kpi_comparison.png)
+![Flask 模拟模式](screenshots/15_flask_simulation_mode.png)
 
-采纳 AI 建议后进入模拟状态。顶部横幅显示已应用参数（可单独移除），KPI 卡片实时展示模拟值 vs 原始值。
+Flask Web 应用中的模拟推演模式：顶部横幅显示已应用 4 条参数（削减停车券 60%、优化滞后窗口、GREEN 客群 +30%、RED 客群 -80%），KPI 卡片实时对比模拟值 vs 原始值。
 
-![模拟模式 - 趋势对比](screenshots/14_simulation_trend_comparison.png)
+![Flask 多模块追问](screenshots/14_flask_multi_module_chat.png)
 
-趋势图叠加原始曲线（虚线）与模拟曲线（实线）。
+Flask Web 应用的逐模块 AI 追问：每个模块都可以弹出独立的问答窗口（KPI 总览 / 投入产出 / 成本结构 / 发券 vs 销售），底部 tab 切换。
 
 ### Flask Web 应用
 
-![Flask Web应用 - 看板](screenshots/15_flask_webapp_dashboard.png)
+![Flask 数据上传](screenshots/00_flask_upload.png)
 
-Flask + Chart.js + ECharts 单页 Web 应用（端口 8050），六个模块集成在可折叠滚动页面中，右侧 AI 抽屉支持逐模块追问。
-
-![Flask Web应用 - 告警与模拟](screenshots/16_flask_webapp_alerts.png)
-
-三级告警图标体系（圆形 / 圆角三角 / 圆形对勾）与模拟模式交互。
+Flask Web 应用的数据上传与自动拉取配置页（监控目录路径、拉取间隔、邮件通知收件人）。
 
 ---
 
@@ -335,18 +333,18 @@ Parkview_Green_Marketing_ROI_Analysis_Dashboard/
 
 ## CI / 测试
 
-每次 Push 自动运行 GitHub Actions（47 个测试用例）：
+每次 Push 自动运行 GitHub Actions（47+ 个测试用例）：
 
 ```yaml
 # .github/workflows/ci.yml
-1. pip install 依赖
-2. python tests/run_tests.py          # 单元测试
-3. python tests/test_five_fixes.py    # 回归测试（47 用例）
+1. pip install 依赖 (含 pytest)
+2. python tests/run_tests.py             # 单元测试
+3. python tests/test_five_fixes.py       # 回归测试（47 用例）
 4. python tests/test_hover_analysis.py
 5. python tests/test_lag_chart.py
-6. python tests/test_scheduler.py
-7. docker build Dockerfile            # 验证 Streamlit 镜像
-8. docker build Dockerfile.webapp     # 验证 Flask 镜像
+6. pytest tests/test_scheduler.py -v     # 调度器测试
+7. docker build Dockerfile               # 验证 Streamlit 镜像
+8. docker build Dockerfile.webapp        # 验证 Flask 镜像
 ```
 
 本地运行：
