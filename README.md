@@ -112,7 +112,7 @@
 - **可隐藏**：点击最小化按钮可把抽屉隐藏到左下角的"找回栏"
 - **左下角栏可找回**：隐藏的抽屉以蓝色 tab 形式常驻在左下角 tray bar，点一下即可恢复
 
-![问一问抽屉 · 跨页悬浮 + 最小化到左下角 tray bar](screenshots/14_flask_multi_module_chat.png)
+![问一问抽屉 · 跨页悬浮 + 最小化到左下角 tray bar](screenshots/14_ask_drawer_cross_page.png)
 
 ---
 
