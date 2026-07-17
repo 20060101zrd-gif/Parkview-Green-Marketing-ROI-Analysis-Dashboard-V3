@@ -18,91 +18,115 @@
 
 ---
 
-## 截图
+## 一、数据接入：自动拉取 & 发送邮件
 
-### 战情摘要 — 指挥中心
+**说明**：定时轮询监控目录发现新 CSV 文件即自动加载，配 SMTP 可在出现严重告警时自动发邮件。拉取间隔、监控目录、收件人邮箱均可在页面内配置并保存。
+
+![自动拉取与邮件通知配置](screenshots/00_flask_upload.png)
+
+---
+
+## 二、六个核心分析页面
+
+### 1. 战情摘要 — 指挥中心
+
+**说明**：首页。顶部三级告警横幅（严重 / 预警 / 健康，红黄绿圆角胶囊），4 张核心 KPI 卡片（ROI、总销售额、核销转化率、会员贡献占比），下方双轴趋势图与券种成本结构环形图，一页纵览全局。
 
 ![战情摘要](screenshots/01_executive_summary_alerts_kpi.png)
 
-首页指挥中心。顶部三级告警横幅（严重 / 预警 / 健康），4 张核心 KPI 卡片（ROI、总销售额、核销转化率、会员贡献占比），下方趋势图与成本结构环形图。
+### 2. KPI 总览
 
-### KPI 总览
+**说明**：8 张 KPI 详情卡片，含数值、单位、同比/环比变化箭头、数据来源提示。
 
 ![KPI 总览](screenshots/04_kpi_overview_cards.png)
 
-8 张 KPI 详情卡片，含数值、单位、同比/环比变化箭头、数据来源提示。
+### 3. 投入产出结构
 
-![KPI 总览 + AI 分析](screenshots/13_kpi_overview_with_ai.png)
-
-模拟模式下的 KPI 卡片，顶部展示 AI 对该页面的整体诊断摘要。
-
-### 投入产出结构
+**说明**：左侧券种环形图（成本侧）vs 右侧业态销售额条形图（产出侧），结构性失衡一目了然。
 
 ![投入产出结构](screenshots/05_cost_revenue.png)
 
-左侧券种环形图（成本侧）vs 右侧业态销售额条形图（产出侧），结构性失衡一目了然。
+### 4. 趋势滞后分析
 
-### 趋势滞后分析
+**说明**：Pearson 相关系数在 0~30 天滞后窗口上自动计算，找出最优转化周期（当前为 3 天）。下方数据表展示每个滞后天数的相关系数与强度判断。
 
-![趋势滞后](screenshots/06_trend_lag_correlation.png)
+![趋势滞后分析](screenshots/06_trend_lag_correlation.png)
 
-Pearson 相关系数在 0~30 天滞后窗口上自动计算，找出最优转化周期（当前为 3 天），下方数据表展示每个滞后天数的相关强度。
+### 5. 客群价值诊断
 
-![趋势滞后 + 模拟](screenshots/16_trend_lag_with_simulation.png)
+**说明**：四象限散点图（红：券效耗损型 / 金：自然高价值型 / 绿：高 ROI 转化型 / 灰：常规基石型）+ 标签触发条件表（每条规则的阈值）+ 客群分布概览（含建议策略）。
 
-模拟模式下的趋势分析，绿色实线为发券量原始曲线，灰色虚线为模拟后曲线。
+![客群四象限矩阵 + 触发条件](screenshots/07_cohort_quadrant_with_rules.png)
 
-### 客群价值诊断
+下方为 Top 5 客群明细表（按销售额），含发券量、核销量、核销率、客单价、标签：
 
-![客群四象限](screenshots/02_cohort_quadrant_matrix.png)
+![客群 Top 5 明细表](screenshots/08_cohort_top5_detail.png)
 
-四象限散点图，按规则自动着色：红（券效耗损型）、金（自然高价值型）、绿（高 ROI 转化型）、灰（常规基石型）。
+四象限的简版视图（不带触发条件表）：
 
-![客群四象限 + 标签触发条件](screenshots/07_cohort_quadrant_with_rules.png)
+![客群四象限简版](screenshots/02_cohort_quadrant_matrix.png)
 
-完整的四象限矩阵 + 标签触发条件表（每条规则的阈值）+ 客群分布概览（建议策略）。
+---
 
-![客群明细 Top 5](screenshots/03_cohort_detail_table.png)
+## 三、LLM 模式 — DeepSeek AI 业务诊断
 
-按销售额 Top 5 客群明细表，含发券量、核销量、核销率、客单价、标签。
+系统默认**本地模式**（零外部调用），点击右上角切换到 LLM 模式后，DeepSeek 大模型接入。
 
-![客群详情](screenshots/08_cohort_top5_detail.png)
+### 本地模式下的智能诊室
 
-Top 5 客群分组规则表 + 完整客群记录（23 条）。
+**说明**：本地模式下，智能诊室页面提示「LLM 模式专属功能，请点击右上角模式切换按钮后启用」。这是数据隐私优先的设计。
 
-### 智能诊室
+![智能诊室 - 本地模式提示](screenshots/09_insight_local_mode.png)
 
-![智能诊室 - 本地模式](screenshots/09_insight_local_mode.png)
+### LLM 模式 · 四种 AI 分析卡片
 
-默认本地模式：智能诊室页面提示「LLM 模式专属功能，请点击右上角模式切换按钮后启用」。这是数据隐私优先的设计——系统默认完全不调用外部 API。
+**说明**：切换到 LLM 模式后，DeepSeek 自动生成四类诊断卡片（严重告警 / 预警提示 / 信息摘要 / 优化建议），每条建议可一键采纳进模拟参数。引擎标识「引擎：DeepSeek LLM」。
 
-![智能诊室 - LLM 模式](screenshots/10_insight_llm_diagnostic_cards.png)
+![智能诊室 - LLM 四种诊断卡片](screenshots/10_insight_llm_diagnostic_cards.png)
 
-切换到 LLM 模式后，DeepSeek 大模型自动生成四类诊断卡片：严重告警、预警提示、信息摘要、优化建议。每条建议可一键加入模拟参数。
+### LLM 模式 · 滑动选取的 AI 分析（可锁定）
 
-![AI 智能问答](screenshots/11_ai_chat_panel.png)
+**说明**：每个图表和模块旁边都有「问」按钮，点击即可在右下角弹出 AI 问答抽屉。抽屉支持锁定/解锁——锁定后切换页面或滚动时，问答窗口保留在原位（最右下方），方便多模块同时提问。
 
-基于当前数据上下文的自由多轮追问，预置常用追问（你能做什么？会员贡献占比多？为什么停车券转化这么低？）。
+![Flask 多模块 AI 问答窗口 + 锁定](screenshots/14_flask_multi_module_chat.png)
 
-![战情摘要 + AI 综合诊断](screenshots/12_executive_with_ai_summary.png)
+### LLM 模式 · 综合诊断摘要（战情摘要页）
 
-战情摘要页顶部展示 DeepSeek 对整体战情的综合诊断摘要（当前 ROI 表现、关键发现、建议）。
+**说明**：智能诊室的综合诊断卡片，可锁定/折叠，作为"战情指挥"悬浮在页面顶部，把所有分析浓缩为一段话。
 
-### 模拟推演
+![战情摘要 + AI 综合诊断摘要](screenshots/12_executive_with_ai_summary.png)
 
-![Flask 模拟模式](screenshots/15_flask_simulation_mode.png)
+### LLM 模式 · 针对 KPI 总览的诊断
 
-Flask Web 应用中的模拟推演模式：顶部横幅显示已应用 4 条参数（削减停车券 60%、优化滞后窗口、GREEN 客群 +30%、RED 客群 -80%），KPI 卡片实时对比模拟值 vs 原始值。
+**说明**：切换到 KPI 总览页时，AI 诊断摘要自动切换为该页专属诊断（针对 9 个 KPI 的解读 + 跨指标关联分析）。
 
-![Flask 多模块追问](screenshots/14_flask_multi_module_chat.png)
+![KPI 总览 + AI 诊断](screenshots/13_kpi_overview_with_ai.png)
 
-Flask Web 应用的逐模块 AI 追问：每个模块都可以弹出独立的问答窗口（KPI 总览 / 投入产出 / 成本结构 / 发券 vs 销售），底部 tab 切换。
+---
 
-### Flask Web 应用
+## 四、问一问 — AI 智能问答
 
-![Flask 数据上传](screenshots/00_flask_upload.png)
+**说明**：在战情摘要页的 AI 智能问答面板。预置四个高频追问（你能做什么？会员贡献占比多？为什么停车券转化这么低？哪个客群的转化效率最高？），也支持自由提问。基于全局数据上下文，DeepSeek 给出针对性回答。
 
-Flask Web 应用的数据上传与自动拉取配置页（监控目录路径、拉取间隔、邮件通知收件人）。
+![AI 智能问答面板](screenshots/11_ai_chat_panel.png)
+
+---
+
+## 五、採纳建议 — 模拟推演
+
+**说明**：在 AI 诊断卡片上点击「采纳建议」后，建议会自动加入模拟参数集合。顶部模拟横幅实时显示已采纳的所有参数（带 × 可单独移除），KPI 卡片同步展示模拟值 vs 原始值对比，趋势图叠加原始曲线（实色）与模拟曲线（虚线）。
+
+### 模拟模式 · KPI 对比
+
+![模拟模式 - 4 条参数已采纳 + KPI 对比](screenshots/15_flask_simulation_mode.png)
+
+模拟横幅显示 4 条已采纳参数（削减停车券 60% / 优化滞后窗口 / GREEN 客群 +30% / RED 客群 -80%），每条参数带 × 移除按钮。KPI 卡片底部显示「AI分析」注解，对比模拟值与原始值的变化。
+
+### 模拟模式 · 趋势线对比
+
+![模拟模式 - 趋势线对比](screenshots/16_trend_lag_with_simulation.png)
+
+趋势滞后分析页的模拟对比，绿色实线为发券量原始曲线，灰色虚线为模拟后曲线，可直观看到调整后的时序变化。
 
 ---
 
@@ -280,48 +304,12 @@ Parkview_Green_Marketing_ROI_Analysis_Dashboard/
 ├── requirements.txt
 │
 ├── pages/                    # Streamlit 6 个页面
-│   ├── 01_战情摘要.py
-│   ├── 02_KPI总览.py
-│   ├── 03_投入产出结构.py
-│   ├── 04_趋势滞后分析.py
-│   ├── 05_客群价值诊断.py
-│   └── 06_智能诊室.py
-│
 ├── config/                   # YAML 配置（所有业务规则）
-│   ├── metrics.yaml          # KPI 定义
-│   ├── alerts.yaml           # 告警规则
-│   ├── cohort_rules.yaml     # 客群分类规则
-│   ├── schema_mapping.yaml   # CSV 列名映射
-│   ├── theme.py              # CSS 设计系统
-│   └── mappings.py           # VIP/年龄映射
-│
 ├── semantic_layer/           # 统一 KPI 计算
-│   ├── metric_engine.py      # 9-KPI 引擎
-│   └── comparison.py         # 同比环比引擎
-│
 ├── ai_engine/                # AI & ML
-│   ├── insight_generator.py  # DeepSeek + 本地规则降级
-│   ├── anomaly_detector.py   # IsolationForest
-│   ├── cohort_clustering.py  # KMeans (k=4)
-│   └── agent_actions.py      # 邮件/报告/日志
-│
-├── data_engine/
-│   └── data_loader.py        # Schema 驱动 CSV 加载
-│
+├── data_engine/              # 数据加载
 ├── components/               # Streamlit 复用组件
-│   ├── header.py             # 导航栏
-│   ├── kpi_cards.py          # KPI 卡片
-│   ├── filters.py            # 筛选器 + 书签
-│   └── export_utils.py       # CSV/Excel 导出
-│
 ├── webapp/                   # Flask Web 应用
-│   ├── app.py                # 20+ REST API
-│   ├── templates/index.html  # SPA 前端
-│   ├── static/
-│   │   ├── css/dashboard.css
-│   │   └── js/dashboard.js   # 127KB 原生 JS
-│   └── services/             # 业务逻辑层
-│
 ├── tests/                    # 测试
 ├── screenshots/              # 产品截图 (17 张)
 ├── data/                     # CSV 数据文件
@@ -338,19 +326,13 @@ Parkview_Green_Marketing_ROI_Analysis_Dashboard/
 ```yaml
 # .github/workflows/ci.yml
 1. pip install 依赖 (含 pytest)
-2. python tests/run_tests.py             # 单元测试
-3. python tests/test_five_fixes.py       # 回归测试（47 用例）
+2. python tests/run_tests.py
+3. python tests/test_five_fixes.py
 4. python tests/test_hover_analysis.py
 5. python tests/test_lag_chart.py
-6. pytest tests/test_scheduler.py -v     # 调度器测试
-7. docker build Dockerfile               # 验证 Streamlit 镜像
-8. docker build Dockerfile.webapp        # 验证 Flask 镜像
-```
-
-本地运行：
-
-```bash
-python tests/run_tests.py
+6. pytest tests/test_scheduler.py -v
+7. docker build Dockerfile
+8. docker build Dockerfile.webapp
 ```
 
 ---
