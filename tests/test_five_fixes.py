@@ -181,9 +181,13 @@ def test_fix3_green_checkmark_rendered_for_healthy():
     assert '#10b981' in body, (
         "Fix 3 FAILED: Green color #10b981 not found in healthy icon styling"
     )
-    # Check for checkmark character
-    assert '\\u2713' in body or '✓' in body or '\u2713' in body, (
-        "Fix 3 FAILED: Checkmark character ✓ not found in healthy icon"
+    # Check for checkmark — either Unicode ✓ or SVG path
+    has_checkmark = (
+        '\\u2713' in body or '✓' in body or '\u2713' in body or
+        'M7 12.5l3.5 3.5 6.5-7' in body  # SVG checkmark path
+    )
+    assert has_checkmark, (
+        "Fix 3 FAILED: Checkmark (✓ or SVG path) not found in healthy icon"
     )
     print("PASS: Fix 3 — Healthy state renders green checkmark")
 
