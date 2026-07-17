@@ -14,7 +14,4 @@ venv/
 *.swp
 *.swo
 
-README.md
-*.md
-
 .streamlit/secrets.toml

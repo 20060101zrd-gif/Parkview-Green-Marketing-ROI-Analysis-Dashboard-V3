@@ -1,6 +1,7 @@
 services:
+  # Streamlit BI Dashboard (primary)
   - type: web
-    name: parkview-roi-dashboard
+    name: parkview-roi-streamlit
     env: docker
     region: singapore
     plan: free
@@ -9,4 +10,21 @@ services:
     envVars:
       - key: DEEPSEEK_API_KEY
         sync: false
+      - key: PORT
+        value: "8501"
+    autoDeploy: true
+
+  # Flask Web Application
+  - type: web
+    name: parkview-roi-webapp
+    env: docker
+    region: singapore
+    plan: free
+    dockerfilePath: ./Dockerfile.webapp
+    healthCheckPath: /api/health
+    envVars:
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: PORT
+        value: "8050"
     autoDeploy: true
