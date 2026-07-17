@@ -1,18 +1,28 @@
+# Secrets
 .streamlit/secrets.toml
 .env
 *.env
 .env.*
 
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.pytest_cache/
 .venv/
 venv/
+*.egg-info/
+dist/
+build/
 
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 
+# OS
 *.log
 .DS_Store
 Thumbs.db
@@ -20,3 +30,6 @@ Thumbs.db
 # Agent 巡检输出
 data/reports/
 data/logs/
+
+# Streamlit 配置 (含可能含密钥)
+.streamlit/
