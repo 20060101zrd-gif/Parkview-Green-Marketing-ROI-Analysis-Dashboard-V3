@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: parkview-roi-dashboard
+    env: docker
+    region: singapore
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+    envVars:
+      - key: DEEPSEEK_API_KEY
+        sync: false
+    autoDeploy: true

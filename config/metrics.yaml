@@ -1,0 +1,85 @@
+# ============================================================
+# CENTRALIZED METRIC DEFINITIONS
+# All KPI formulas are defined here once. Every page references
+# these definitions through the MetricEngine.
+# ============================================================
+
+metrics:
+  total_issued:
+    name: "Total Coupons Issued"
+    label: "Total Coupons Issued"
+    formula: "count(coupon_record_id)"
+    format: "integer"
+    unit: "Coupons"
+
+  real_used:
+    name: "Real Redemptions"
+    label: "Real Redemptions"
+    formula: "sum(status_code == 1)"
+    format: "integer"
+    unit: "Coupons"
+
+  conversion_rate:
+    name: "Conversion Rate"
+    label: "Conversion Rate"
+    formula: "real_used / total_issued * 100"
+    format: "percentage"
+    unit: "%"
+    alert_threshold:
+      min: 1.0
+      severity: "warning"
+
+  total_sales:
+    name: "Total Sales"
+    label: "Total Sales Revenue"
+    formula: "sum(sales_amount)"
+    format: "currency"
+    unit: "CNY"
+
+  total_orders:
+    name: "Total Orders"
+    label: "Total Transaction Count"
+    formula: "count(order_id)"
+    format: "integer"
+    unit: "Orders"
+
+  aov:
+    name: "Average Order Value"
+    label: "Avg Transaction Value"
+    formula: "total_sales / total_orders"
+    format: "currency"
+    unit: "CNY"
+
+  member_contribution:
+    name: "Member Contribution"
+    label: "Member Sales Share"
+    formula: "member_sales / total_sales * 100"
+    format: "percentage"
+    unit: "%"
+
+  roi:
+    name: "Marketing ROI"
+    label: "Return on Marketing Investment"
+    formula: "(estimated_coupon_sales - estimated_cost) / estimated_cost * 100"
+    format: "percentage"
+    unit: "%"
+    alert_threshold:
+      min: 0
+      severity: "critical"
+
+  coupon_leverage:
+    name: "Coupon Leverage"
+    label: "Coupon-Driven Sales Penetration"
+    formula: "estimated_coupon_sales / total_sales * 100"
+    format: "percentage"
+    unit: "%"
+    alert_threshold:
+      min: 0.05
+      severity: "warning"
+
+  redeem_rate:
+    name: "Redemption Rate"
+    label: "Aggregate Redemption Rate"
+    formula: "total_redeemed / total_issued * 100"
+    format: "percentage"
+    unit: "%"

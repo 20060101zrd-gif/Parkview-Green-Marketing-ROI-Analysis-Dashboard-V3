@@ -1,0 +1,42 @@
+# ============================================================
+# COHORT CLASSIFICATION RULES
+# Rules for auto-tagging customer cohort segments.
+# Users can adjust thresholds and add new rules without editing Python.
+# ============================================================
+
+cohort_types:
+  - tag: "RED — Coupon Drain Cohort"
+    color: "#ef4444"
+    rules:
+      - metric: "avg_coupons_per_person"
+        condition: ">= 5"
+      - metric: "atv"
+        condition: "< 200"
+    action: "Freeze coupon issuance. Cap at 3 coupons/person/month."
+    description: "High coupon resource consumption with low per-transaction return."
+
+  - tag: "GOLD — Natural High-Value Cohort"
+    color: "#f59e0b"
+    rules:
+      - metric: "atv"
+        condition: ">= 1000"
+      - metric: "redeem_rate"
+        condition: "< 0.02"
+    action: "Focus on retention and service quality. Low coupon sensitivity."
+    description: "High spenders who rarely use coupons — loyalty-driven, not discount-driven."
+
+  - tag: "GREEN — High-ROI Conversion Cohort"
+    color: "#10b981"
+    rules:
+      - metric: "redeem_rate"
+        condition: ">= 0.01"
+      - metric: "atv"
+        condition: ">= 500"
+    action: "Amplify marketing investment. Increase coupon allocation."
+    description: "High marketing sensitivity with strong per-transaction return."
+
+  - tag: "GRAY — Baseline Cohort"
+    color: "#64748b"
+    rules: []
+    action: "Standard operational cadence. Gradual optimization."
+    description: "No significant distinguishing characteristics. Steady-state engagement."

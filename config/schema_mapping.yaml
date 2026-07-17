@@ -1,0 +1,51 @@
+# ============================================================
+# SCHEMA MAPPING CONFIGURATION
+# Map external CSV column names to internal standardized names.
+# Users can edit this file to match their own data without
+# modifying any Python code.
+# ============================================================
+
+coupon_table:
+  internal_columns:
+    - create_time
+    - update_time
+    - coupon_status
+    - level
+    - age_group
+    - userid
+    - coupon_type
+    - coupon_record_id
+
+  templates:
+    parkview_green:
+      create_time:      "create_time"
+      update_time:      "update_time"
+      coupon_status:    "coupon_status"
+      level:            "level"
+      age_group:        "age_group"
+      userid:           "userid"
+      coupon_type:      "coupon_type"
+      coupon_record_id: "coupon_record_id"
+
+sales_table:
+  internal_columns:
+    - 销售时间
+    - 销售额
+    - 会员等级
+    - 生日
+    - 业态
+    - 科创编号
+    - 电话
+
+  templates:
+    parkview_green:
+      销售时间: "销售时间"
+      销售额:   "销售额"
+      会员等级: "会员等级"
+      生日:     "生日"
+      业态:     "业态"
+      科创编号: "科创编号"
+      电话:     "电话"
+
+# Active template name — change this to switch data sources
+active_template: "parkview_green"

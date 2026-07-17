@@ -1,0 +1,356 @@
+ <!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>北京侨福芳草地 · 营销效能战情室</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}?v=20260716b">
+</head>
+<body>
+
+<div class="app-shell">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <img src="{{ url_for('static', filename='images/parkview_green_logo_dark.png') }}" alt="Parkview Green 芳草地" class="sidebar-brand-logo">
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-group-label">分析中心</div>
+      <a class="nav-item active" data-page="summary" data-title="战情摘要">
+        <span class="nav-item-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span>
+        战情摘要
+      </a>
+      <a class="nav-item" data-page="kpi" data-title="KPI 总览">
+        <span class="nav-item-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg></span>
+        KPI 总览
+      </a>
+      <a class="nav-item" data-page="structure" data-title="投入产出结构">
+        <span class="nav-item-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 10 10h-10z" fill="currentColor" opacity="0.3"/></svg></span>
+        投入产出结构
+      </a>
+      <a class="nav-item" data-page="trend" data-title="趋势滞后分析">
+        <span class="nav-item-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></span>
+        趋势滞后分析
+      </a>
+      <a class="nav-item" data-page="cohort" data-title="客群价值诊断">
+        <span class="nav-item-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></span>
+        客群价值诊断
+      </a>
+      <a class="nav-item" data-page="insight" data-title="智能诊室">
+        <span class="nav-item-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z"/><path d="M12 6v6l4 2"/></svg></span>
+        智能诊室
+      </a>
+    </nav>
+  </aside>
+
+  <!-- MAIN AREA -->
+  <div class="main-area">
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="breadcrumb">
+          <span class="breadcrumb-item">营销分析</span>
+          <span class="breadcrumb-sep">/</span>
+          <span class="breadcrumb-item current" id="breadcrumb-current">战情摘要</span>
+          <button id="page-mode-toggle" style="height:24px;padding:0 10px;margin-left:8px;font-size:11px;background:transparent;border:1px solid #9ca3af;border-radius:4px;color:#6b7280;cursor:pointer;white-space:nowrap;">本地模式</button>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <div class="topbar-date-range" id="date-range-display">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          <span id="date-range-text">加载中...</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:2px;opacity:0.5;"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+        <!-- Date Picker Panel -->
+        <div class="date-picker-panel" id="date-picker-panel" style="display:none;">
+          <div class="date-picker-title">选择数据周期</div>
+          <div class="date-picker-row">
+            <label class="date-picker-label" for="dp-start">开始日期</label>
+            <input type="date" id="dp-start" class="date-picker-input" />
+          </div>
+          <div class="date-picker-row">
+            <label class="date-picker-label" for="dp-end">结束日期</label>
+            <input type="date" id="dp-end" class="date-picker-input" />
+          </div>
+          <div class="date-picker-actions">
+            <button class="btn btn-secondary btn-sm" id="dp-reset">重置</button>
+            <button class="btn btn-primary btn-sm" id="dp-apply">应用</button>
+          </div>
+          <div class="date-picker-hint" id="dp-hint">数据范围：加载中...</div>
+        </div>
+
+      </div>
+    </header>
+
+    <main class="content">
+
+      <!-- ===== PAGE: SUMMARY ===== -->
+      <div class="page-section active" id="page-summary">
+        <div class="filter-bar">
+          <span style="font-size:12px;color:var(--gray-400);" id="record-summary">加载中...</span>
+          <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+            <button class="btn btn-secondary btn-sm" id="btn-upload-toggle">上传数据</button>
+            <button class="btn btn-secondary btn-sm" id="btn-scheduler-toggle">自动拉取</button>
+            <button class="btn btn-secondary btn-sm btn-export-kpi">导出 KPI (CSV)</button>
+            <button class="btn btn-primary btn-sm btn-export-report">导出诊断报告</button>
+          </div>
+        </div>
+        <!-- Upload panel -->
+        <div id="upload-panel" style="display:none;background:#f8fafc;border:1px solid var(--gray-200);border-radius:8px;padding:12px;margin-bottom:16px;">
+          <div style="font-weight:600;font-size:13px;margin-bottom:8px;">上传数据文件</div>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <div><label style="font-size:12px;color:var(--gray-500);">投入数据（发券）</label><input type="file" id="upload-input" accept=".csv" style="display:block;font-size:12px;margin-top:2px;"></div>
+            <div><label style="font-size:12px;color:var(--gray-500);">产出数据（销售）</label><input type="file" id="upload-output" accept=".csv" style="display:block;font-size:12px;margin-top:2px;"></div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;">
+            <span id="upload-status" style="font-size:11px;color:var(--gray-400);"></span>
+            <button class="btn btn-primary btn-sm" id="btn-upload-submit">确认上传并刷新</button>
+          </div>
+        </div>
+        <!-- Scheduler config panel -->
+        <div id="scheduler-panel" style="display:none;background:#f8fafc;border:1px solid var(--gray-200);border-radius:8px;padding:12px;margin-bottom:16px;">
+          <div style="font-weight:600;font-size:13px;margin-bottom:8px;">自动数据拉取配置</div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <label style="font-size:12px;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="sched-enabled"> 启用定时拉取</label>
+            </div>
+            <div><label style="font-size:11px;color:var(--gray-500);">监控目录路径</label><input type="text" id="sched-watch-dir" placeholder="例如: D:\data_drop" style="display:block;width:100%;font-size:12px;padding:4px 8px;border:1px solid var(--gray-200);border-radius:4px;margin-top:2px;"></div>
+            <div><label style="font-size:11px;color:var(--gray-500);">拉取间隔（小时）</label><input type="number" id="sched-interval" value="24" min="1" style="display:block;width:80px;font-size:12px;padding:4px 8px;border:1px solid var(--gray-200);border-radius:4px;margin-top:2px;"></div>
+            <!-- R2: Email notification section -->
+            <div style="border-top:1px solid var(--gray-200);padding-top:8px;margin-top:4px;">
+              <div style="font-weight:600;font-size:12px;margin-bottom:6px;color:var(--gray-600);">邮件通知</div>
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                <label style="font-size:12px;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="sched-email-enabled"> 启用邮件通知</label>
+              </div>
+              <div><label style="font-size:11px;color:var(--gray-500);">收件邮箱</label><input type="email" id="sched-notify-email" placeholder="例如: analyst@parkviewgreen.com" style="display:block;width:100%;font-size:12px;padding:4px 8px;border:1px solid var(--gray-200);border-radius:4px;margin-top:2px;"></div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;">
+            <span id="scheduler-status" style="font-size:11px;color:var(--gray-400);"></span>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-secondary btn-sm" id="btn-scheduler-trigger">立即拉取</button>
+              <button class="btn btn-primary btn-sm" id="btn-scheduler-save">保存配置</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Data Source Info Panel -->
+        <div id="data-source-panel" style="display:none;background:#f8fafc;border:1px solid var(--gray-200);border-radius:8px;padding:12px;margin-bottom:16px;font-size:12px;color:#475569;line-height:1.8;">
+          <div style="font-weight:600;font-size:13px;margin-bottom:6px;color:#374151;">数据真实性说明</div>
+          <div>• 发券量、销售额、核销率、客单价等基础指标均来自 CSV 原始数据真实聚合</div>
+          <div>• ROI 为估算值，基于券种单张成本假设推算，非财务精确值</div>
+          <div>• 客群四象限标签由规则引擎自动判定，阈值可配置</div>
+          <div>• 滞后分析、异常检测为算法真实计算结果</div>
+          <div>• LLM 模式下的文字洞察由 AI 生成，仅供参考</div>
+          <div>• 模拟预测数据为 AI 或规则引擎估算，非真实发生值</div>
+        </div>
+
+        <div style="margin-bottom:var(--space-4);display:flex;gap:6px;flex-direction:column;" id="alerts-container">
+          <div id="alert-structure" style="display:flex;align-items:flex-start;gap:8px;background:#fef2f2;border:1px solid #fecaca;border-radius:4px;padding:8px 12px;">
+            <svg class="alert-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" style="flex-shrink:0;margin-top:1px;">
+              <path d="M12 3.5 L20.5 20 L3.5 20 Z" stroke="#ef4444" stroke-width="1.5" fill="#fff" stroke-linejoin="round"/>
+              <text x="12" y="15.5" text-anchor="middle" fill="#ef4444" font-size="11" font-weight="700">!</text>
+            </svg>
+            <div style="flex:1;min-width:0;">
+              <div class="alert-title" id="alert-structure-title" style="font-weight:600;font-size:13px;margin-bottom:2px;"></div>
+              <div class="alert-desc" id="alert-structure-msg" style="font-size:11px;color:#475569;line-height:1.5;"></div>
+            </div>
+          </div>
+          <div id="alert-roi" style="display:flex;align-items:flex-start;gap:8px;background:#fffbeb;border:1px solid #fde68a;border-radius:4px;padding:8px 12px;">
+            <svg class="alert-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" style="flex-shrink:0;margin-top:1px;">
+              <path d="M12 3.5 L20.5 20 L3.5 20 Z" stroke="#f59e0b" stroke-width="1.5" fill="#fff" stroke-linejoin="round"/>
+              <text x="12" y="15.5" text-anchor="middle" fill="#f59e0b" font-size="11" font-weight="700">!</text>
+            </svg>
+            <div style="flex:1;min-width:0;">
+              <div class="alert-title" id="alert-roi-title" style="font-weight:600;font-size:13px;margin-bottom:2px;"></div>
+              <div class="alert-desc" id="alert-roi-msg" style="font-size:11px;color:#475569;line-height:1.5;"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-header">
+          <div>
+            <div class="section-title"><span class="section-title-bar"></span>核心指挥看板</div>
+            <div class="section-subtitle">关键业绩指标 · 实时计算</div>
+          </div>
+        </div>
+
+        <div class="kpi-grid" id="kpi-grid-summary">
+          <div class="kpi-card green"><div class="kpi-card-header"><div class="kpi-card-label">营销投资回报率</div><div class="kpi-card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div></div><div class="kpi-card-value loading" id="kpi-roi" style="width:80px;height:36px;border-radius:4px;"></div><div class="kpi-card-footer"><span class="kpi-card-sub loading" style="width:90px;height:18px;border-radius:4px;"></span></div></div>
+          <div class="kpi-card blue"><div class="kpi-card-header"><div class="kpi-card-label">总销售额</div><div class="kpi-card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M18.7 8l-5.1 5.2-2.8-2.7L5 14"/></svg></div></div><div class="kpi-card-value loading" id="kpi-sales" style="width:100px;height:36px;border-radius:4px;"></div><div class="kpi-card-footer"><span class="kpi-card-sub loading" style="width:80px;height:18px;border-radius:4px;"></span></div></div>
+          <div class="kpi-card purple"><div class="kpi-card-header"><div class="kpi-card-label">核销转化率</div><div class="kpi-card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div></div><div class="kpi-card-value loading" id="kpi-conv" style="width:80px;height:36px;border-radius:4px;"></div><div class="kpi-card-footer"><span class="kpi-card-sub loading" style="width:80px;height:18px;border-radius:4px;"></span></div></div>
+          <div class="kpi-card gold"><div class="kpi-card-header"><div class="kpi-card-label">会员贡献占比</div><div class="kpi-card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div></div><div class="kpi-card-value loading" id="kpi-member" style="width:80px;height:36px;border-radius:4px;"></div><div class="kpi-card-footer"><span class="kpi-card-sub loading" style="width:90px;height:18px;border-radius:4px;"></span></div></div>
+        </div>
+
+        <!-- Trend Chart -->
+        <div class="grid-2-1 mb-6">
+          <div class="panel">
+            <div class="panel-header">
+              <div><div class="panel-title">发券量 vs 销售额趋势</div><div style="font-size:12px;color:var(--gray-400);margin-top:2px;" id="trend-r-label">双轴时间序列 · 计算中...</div></div>
+              <div class="section-actions">
+                <div class="tabs" style="margin-bottom:0;border:none;">
+                  <span class="tab" data-gran="daily">日</span>
+                  <span class="tab active" data-gran="weekly">周</span>
+                  <span class="tab" data-gran="monthly">月</span>
+                </div>
+              </div>
+            </div>
+            <div class="panel-body"><div class="chart-area"><canvas id="trendChart"></canvas></div></div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><div><div class="panel-title">成本结构</div><div style="font-size:12px;color:var(--gray-400);margin-top:2px;">按券种类型拆分</div></div></div>
+            <div class="panel-body"><div class="chart-area-sm" style="margin-bottom:12px;"><canvas id="donutChart"></canvas></div><div id="donut-legend" style="display:flex;flex-direction:column;gap:8px;"></div></div>
+          </div>
+        </div>
+
+        <!-- Cohort Matrix -->
+        <div class="section-header">
+          <div><div class="section-title"><span class="section-title-bar"></span>客群价值诊断矩阵</div><div class="section-subtitle">四象限自动标签 · 交叉核销率与客单价两个维度</div></div>
+          <div class="section-actions"><button class="btn btn-secondary btn-sm btn-export-cohort">导出客群 (CSV)</button><button class="btn btn-primary btn-sm btn-export-report">导出报告</button></div>
+        </div>
+        <div class="panel mb-6"><div class="panel-body"><div class="cohort-matrix" id="cohort-matrix">
+          <div class="matrix-corner"></div><div class="matrix-axis">高客单价</div><div class="matrix-axis"></div>
+          <div class="matrix-axis" style="writing-mode:vertical-rl;">高核销率</div>
+          <div class="matrix-cell green" id="matrix-green"><div class="matrix-cell-label">GREEN · 高ROI转化客群</div><div class="matrix-cell-count">-</div><div class="matrix-cell-desc">加载中...</div></div>
+          <div class="matrix-cell gold" id="matrix-gold"><div class="matrix-cell-label">GOLD · 自然高价值客群</div><div class="matrix-cell-count">-</div><div class="matrix-cell-desc">加载中...</div></div>
+          <div class="matrix-axis" style="writing-mode:vertical-rl;">低核销率</div>
+          <div class="matrix-cell red" id="matrix-red"><div class="matrix-cell-label">RED · 耗损型客群</div><div class="matrix-cell-count">-</div><div class="matrix-cell-desc">加载中...</div></div>
+          <div class="matrix-cell gray" id="matrix-gray"><div class="matrix-cell-label">GRAY · 基础客群</div><div class="matrix-cell-count">-</div><div class="matrix-cell-desc">加载中...</div></div>
+        </div></div></div>
+
+        <!-- Category + Lag -->
+        <div class="grid-2 mb-6">
+          <div class="panel">
+            <div class="panel-header"><div><div class="panel-title">业态销售额排行</div><div style="font-size:12px;color:var(--gray-400);margin-top:2px;">投入与产出结构对比</div></div></div>
+            <div class="panel-body"><div id="category-bars"></div></div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><div><div class="panel-title">滞后性分析</div><div style="font-size:12px;color:var(--gray-400);margin-top:2px;">皮尔逊相关系数 · 最佳滞后窗口</div></div></div>
+            <div class="panel-body"><div class="chart-area-sm" style="margin-bottom:12px;"><canvas id="lagChart"></canvas></div><div id="lag-insight" style="padding:var(--space-3);background:var(--success-bg);border-radius:var(--radius-md);border:1px solid #a7f3d0;font-size:12px;color:#065f46;font-weight:500;line-height:1.6;">计算中...</div></div>
+          </div>
+        </div>
+
+        <!-- Cohort Table -->
+        <div class="section-header">
+          <div><div class="section-title"><span class="section-title-bar"></span>客群明细</div><div class="section-subtitle">销售额 Top 5 · 按客群标签着色</div></div>
+        </div>
+        <div class="panel">
+          <table class="data-table"><thead><tr><th>客群</th><th>会员等级</th><th>年龄段</th><th class="text-right" style="text-align:right;">发券量</th><th class="text-right" style="text-align:right;">核销量</th><th class="text-right" style="text-align:right;">核销率</th><th class="text-right" style="text-align:right;">客单价</th><th class="text-right" style="text-align:right;">销售额</th><th>标签</th></tr></thead>
+          <tbody id="cohort-table-body"><tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px;">加载中...</td></tr></tbody></table>
+          <div class="panel-footer" style="display:flex;align-items:center;justify-content:space-between;">
+            <span style="font-size:12px;color:var(--gray-400);" id="table-info">加载中...</span>
+          </div>
+        </div>
+
+        <div style="margin-top:var(--space-8);padding-top:var(--space-4);border-top:1px solid var(--gray-200);text-align:center;">
+          <span style="font-size:12px;color:var(--gray-400);">北京侨福芳草地 · 营销效能战情室 v3.0 &nbsp;|&nbsp; 数据引擎 v1.0</span>
+        </div>
+      </div>
+
+      <!-- ===== PAGE: KPI ===== -->
+      <div class="page-section" id="page-kpi">
+        <div class="section-header"><div><div class="section-title"><span class="section-title-bar"></span>KPI 指标总览</div><div class="section-subtitle">全量营销效能指标 · 集中化度量定义</div></div></div>
+        <div class="kpi-grid mb-6" id="kpi-grid-page">
+          <div class="kpi-card green"><div class="kpi-card-header"><div class="kpi-card-label">发券总量</div><div class="kpi-card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></div></div><div class="kpi-card-value loading" id="kpi2-issued" style="width:70px;height:36px;border-radius:4px;"></div><div class="kpi-card-footer"><span class="kpi-card-sub loading" style="width:70px;height:18px;border-radius:4px;"></span></div></div>
+          <div class="kpi-card blue"><div class="kpi-card-header"><div class="kpi-card-label">真实核销量</div><div class="kpi-card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></div></div><div class="kpi-card-value loading" id="kpi2-redemed" style="width:70px;height:36px;border-radius:4px;"></div><div class="kpi-card-footer"><span class="kpi-card-sub loading" style="width:80px;height:18px;border-radius:4px;"></span></div></div>
+          <div class="kpi-card purple"><div class="kpi-card-header"><div class="kpi-card-label">交易笔数</div><div class="kpi-card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div></div><div class="kpi-card-value loading" id="kpi2-orders" style="width:80px;height:36px;border-radius:4px;"></div><div class="kpi-card-footer"><span class="kpi-card-sub loading" style="width:70px;height:18px;border-radius:4px;"></span></div></div>
+          <div class="kpi-card gold"><div class="kpi-card-header"><div class="kpi-card-label">客单价 (AOV)</div><div class="kpi-card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div></div><div class="kpi-card-value loading" id="kpi2-aov" style="width:70px;height:36px;border-radius:4px;"></div><div class="kpi-card-footer"><span class="kpi-card-sub loading" style="width:70px;height:18px;border-radius:4px;"></span></div></div>
+        </div>
+        <div class="kpi-grid mb-6">
+          <div class="kpi-card green"><div class="kpi-card-header"><div class="kpi-card-label">总销售额</div><div class="kpi-card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M18.7 8l-5.1 5.2-2.8-2.7L5 14"/></svg></div></div><div class="kpi-card-value loading" id="kpi2-sales" style="width:80px;height:36px;border-radius:4px;"></div><div class="kpi-card-footer"><span class="kpi-card-sub loading" style="width:80px;height:18px;border-radius:4px;"></span></div></div>
+          <div class="kpi-card blue"><div class="kpi-card-header"><div class="kpi-card-label">会员贡献占比</div><div class="kpi-card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div></div><div class="kpi-card-value loading" id="kpi2-member" style="width:70px;height:36px;border-radius:4px;"></div><div class="kpi-card-footer"><span class="kpi-card-sub loading" style="width:80px;height:18px;border-radius:4px;"></span></div></div>
+          <div class="kpi-card purple"><div class="kpi-card-header"><div class="kpi-card-label">营销 ROI</div><div class="kpi-card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></div></div><div class="kpi-card-value loading" id="kpi2-roi" style="width:70px;height:36px;border-radius:4px;"></div><div class="kpi-card-footer"><span class="kpi-card-sub loading" style="width:90px;height:18px;border-radius:4px;"></span></div></div>
+          <div class="kpi-card gold"><div class="kpi-card-header"><div class="kpi-card-label">发券动销渗透率</div><div class="kpi-card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></div></div><div class="kpi-card-value loading" id="kpi2-leverage" style="width:70px;height:36px;border-radius:4px;"></div><div class="kpi-card-footer"><span class="kpi-card-sub loading" style="width:90px;height:18px;border-radius:4px;"></span></div></div>
+        </div>
+        <div class="panel"><div class="panel-header"><div class="panel-title">度量值明细</div></div>
+        <table class="data-table"><thead><tr><th>指标 Key</th><th>显示名称</th><th>公式</th><th class="text-right" style="text-align:right;">当前值</th><th class="text-right" style="text-align:right;">单位</th><th>状态</th></tr></thead>
+        <tbody id="metric-table-body"><tr><td colspan="6" style="text-align:center;color:var(--gray-400);padding:24px;">加载中...</td></tr></tbody></table></div>
+        <div style="margin-top:var(--space-8);padding-top:var(--space-4);border-top:1px solid var(--gray-200);text-align:center;"><span style="font-size:12px;color:var(--gray-400);">北京侨福芳草地 · 营销效能战情室 v3.0</span></div>
+      </div>
+
+      <!-- ===== PAGE: STRUCTURE ===== -->
+      <div class="page-section" id="page-structure">
+        <div class="section-header"><div><div class="section-title"><span class="section-title-bar"></span>投入产出结构分析</div><div class="section-subtitle">成本侧 vs 产出侧 · 资源配置效率诊断</div></div></div>
+        <div style="margin-bottom:var(--space-6);display:flex;gap:6px;flex-direction:column;">
+          <div id="alert-structure-struct" style="display:flex;align-items:flex-start;gap:8px;background:#fef2f2;border:1px solid #fecaca;border-radius:4px;padding:8px 12px;">
+            <svg class="alert-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" style="flex-shrink:0;margin-top:1px;">
+              <path d="M12 3.5 L20.5 20 L3.5 20 Z" stroke="#ef4444" stroke-width="1.5" fill="#fff" stroke-linejoin="round"/>
+              <text x="12" y="15.5" text-anchor="middle" fill="#ef4444" font-size="11" font-weight="700">!</text>
+            </svg>
+            <div style="flex:1;min-width:0;">
+              <div class="alert-title" style="font-weight:600;font-size:13px;margin-bottom:2px;"></div>
+              <div class="alert-desc" style="font-size:11px;color:#475569;line-height:1.5;"></div>
+            </div>
+          </div>
+          <div id="alert-roi-struct" style="display:flex;align-items:flex-start;gap:8px;background:#fffbeb;border:1px solid #fde68a;border-radius:4px;padding:8px 12px;">
+            <svg class="alert-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" style="flex-shrink:0;margin-top:1px;">
+              <path d="M12 3.5 L20.5 20 L3.5 20 Z" stroke="#f59e0b" stroke-width="1.5" fill="#fff" stroke-linejoin="round"/>
+              <text x="12" y="15.5" text-anchor="middle" fill="#f59e0b" font-size="11" font-weight="700">!</text>
+            </svg>
+            <div style="flex:1;min-width:0;">
+              <div class="alert-title" style="font-weight:600;font-size:13px;margin-bottom:2px;"></div>
+              <div class="alert-desc" style="font-size:11px;color:#475569;line-height:1.5;"></div>
+            </div>
+          </div>
+        </div>
+        <div class="grid-2 mb-6">
+          <div class="panel"><div class="panel-header"><div class="panel-title">成本侧 — 券种投入结构</div></div><div class="panel-body"><div class="chart-area-sm" style="margin-bottom:12px;"><canvas id="structDonutChart"></canvas></div><div id="struct-donut-legend" style="display:flex;flex-direction:column;gap:8px;"></div></div></div>
+          <div class="panel"><div class="panel-header"><div class="panel-title">产出侧 — 业态销售额排行</div></div><div class="panel-body"><div id="struct-category-bars"></div></div></div>
+        </div>
+        <div style="margin-top:var(--space-8);padding-top:var(--space-4);border-top:1px solid var(--gray-200);text-align:center;"><span style="font-size:12px;color:var(--gray-400);">北京侨福芳草地 · 营销效能战情室 v3.0</span></div>
+      </div>
+
+      <!-- ===== PAGE: TREND ===== -->
+      <div class="page-section" id="page-trend">
+        <div class="section-header"><div><div class="section-title"><span class="section-title-bar"></span>趋势滞后性分析</div><div class="section-subtitle">发券时点 vs 消费时点 · 皮尔逊相关系数随滞后天数变化</div></div></div>
+        <div class="alert success mb-6"><div class="alert-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div><div class="alert-content"><div class="alert-title" id="best-lag-title">计算最佳滞后窗口...</div><div class="alert-desc" id="best-lag-desc">分析中...</div></div></div>
+        <div class="panel mb-6"><div class="panel-header"><div class="panel-title">相关系数 vs 滞后天数</div><span style="font-size:12px;color:var(--gray-400);">Pearson r 越高 = 发券与消费的时序关联越强 <span style="font-size:10px;color:#9ca3af;">真实计算：皮尔逊相关系数</span></span></div><div class="panel-body"><div class="chart-area"><canvas id="lagCorrChart"></canvas></div></div></div>
+        <div class="panel"><div class="panel-header"><div class="panel-title">各滞后天数详细数据</div></div><table class="data-table"><thead><tr><th>滞后天数</th><th class="text-right" style="text-align:right;">皮尔逊 r</th><th>关联强度</th><th>建议</th></tr></thead><tbody id="lag-table-body"><tr><td colspan="4" style="text-align:center;color:var(--gray-400);padding:24px;">加载中...</td></tr></tbody></table></div>
+        <div style="margin-top:var(--space-8);padding-top:var(--space-4);border-top:1px solid var(--gray-200);text-align:center;"><span style="font-size:12px;color:var(--gray-400);">北京侨福芳草地 · 营销效能战情室 v3.0</span></div>
+      </div>
+
+      <!-- ===== PAGE: COHORT ===== -->
+      <div class="page-section" id="page-cohort">
+        <div class="section-header"><div><div class="section-title"><span class="section-title-bar"></span>客群价值诊断矩阵</div><div class="section-subtitle">四象限自动标签 · 交叉核销率与客单价两个维度 <span style="font-size:10px;color:#9ca3af;">规则判定</span></div></div></div>
+        <div class="panel mb-6"><div class="panel-body"><div class="cohort-matrix" id="cohort-page-matrix">
+          <div class="matrix-corner"></div><div class="matrix-axis">高客单价</div><div class="matrix-axis"></div>
+          <div class="matrix-axis" style="writing-mode:vertical-rl;">高核销率</div>
+          <div class="matrix-cell green" id="cp-matrix-green"><div class="matrix-cell-label">GREEN · 高ROI转化</div><div class="matrix-cell-count">-</div><div class="matrix-cell-desc">加载中...</div><div class="matrix-expand-toggle" style="font-size:10px;color:#059669;cursor:pointer;margin-top:4px;" onclick="event.stopPropagation()">查看全部组 &#x25BC;</div><div class="matrix-expand-list" style="display:none;max-height:120px;overflow-y:auto;font-size:11px;margin-top:4px;"></div></div>
+          <div class="matrix-cell gold" id="cp-matrix-gold"><div class="matrix-cell-label">GOLD · 自然高价值</div><div class="matrix-cell-count">-</div><div class="matrix-cell-desc">加载中...</div><div class="matrix-expand-toggle" style="font-size:10px;color:#b45309;cursor:pointer;margin-top:4px;" onclick="event.stopPropagation()">查看全部组 &#x25BC;</div><div class="matrix-expand-list" style="display:none;max-height:120px;overflow-y:auto;font-size:11px;margin-top:4px;"></div></div>
+          <div class="matrix-axis" style="writing-mode:vertical-rl;">低核销率</div>
+          <div class="matrix-cell red" id="cp-matrix-red"><div class="matrix-cell-label">RED · 耗损型</div><div class="matrix-cell-count">-</div><div class="matrix-cell-desc">加载中...</div><div class="matrix-expand-toggle" style="font-size:10px;color:#dc2626;cursor:pointer;margin-top:4px;" onclick="event.stopPropagation()">查看全部组 &#x25BC;</div><div class="matrix-expand-list" style="display:none;max-height:120px;overflow-y:auto;font-size:11px;margin-top:4px;"></div></div>
+          <div class="matrix-cell gray" id="cp-matrix-gray"><div class="matrix-cell-label">GRAY · 基础客群</div><div class="matrix-cell-count">-</div><div class="matrix-cell-desc">加载中...</div><div class="matrix-expand-toggle" style="font-size:10px;color:#6b7280;cursor:pointer;margin-top:4px;" onclick="event.stopPropagation()">查看全部组 &#x25BC;</div><div class="matrix-expand-list" style="display:none;max-height:120px;overflow-y:auto;font-size:11px;margin-top:4px;"></div></div>
+        </div></div></div>
+        <div class="grid-2 mb-6">
+          <div class="panel"><div class="panel-header"><div class="panel-title">标签触发条件</div></div><div class="panel-body"><table class="data-table"><thead><tr><th>标签</th><th>条件</th><th class="text-right" style="text-align:right;">客群数</th><th class="text-right" style="text-align:right;">占比</th></tr></thead><tbody id="tag-table-body"><tr><td colspan="4" style="text-align:center;color:var(--gray-400);padding:24px;">加载中...</td></tr></tbody></table></div></div>
+          <div class="panel"><div class="panel-header"><div class="panel-title">客群分布概览</div></div><div class="panel-body" id="cohort-dist-stats">加载中...</div></div>
+        </div>
+        <!-- 客群明细（唯一表，带展开按钮）-->
+        <div class="panel" id="cohort-detail-panel"><div class="panel-header"><div class="panel-title">客群明细 — Top 5 by 销售额</div></div><table class="data-table"><thead><tr><th>客群</th><th>会员等级</th><th>年龄段</th><th class="text-right" style="text-align:right;">发券量</th><th class="text-right" style="text-align:right;">核销量</th><th class="text-right" style="text-align:right;">核销率</th><th class="text-right" style="text-align:right;">客单价</th><th class="text-right" style="text-align:right;">销售额</th><th>标签</th></tr></thead><tbody id="cohort-detail-table"><tr><td colspan="9" style="text-align:center;color:var(--gray-400);padding:24px;">加载中...</td></tr></tbody></table></div>
+        <div style="margin-top:var(--space-8);padding-top:var(--space-4);border-top:1px solid var(--gray-200);text-align:center;"><span style="font-size:12px;color:var(--gray-400);">北京侨福芳草地 · 营销效能战情室 v3.0</span></div>
+      </div>
+
+      <!-- ===== PAGE: INSIGHT ===== -->
+      <div class="page-section" id="page-insight">
+        <div class="section-header"><div><div class="section-title"><span class="section-title-bar"></span>智能诊室</div><div class="section-subtitle">AI 驱动的营销策略诊断 · 基于数据引擎自动生成洞察</div></div></div>
+        <div class="grid-2 mb-6">
+          <div class="panel"><div class="panel-header"><div class="panel-title" style="display:flex;align-items:center;gap:8px;"><span style="width:8px;height:8px;border-radius:50%;background:var(--error);"></span>诊断 #1 · 资源错配</div><span class="badge badge-red">严重</span></div><div class="panel-body"><div style="font-size:14px;color:var(--gray-700);line-height:1.8;" id="insight-1">加载中...</div></div></div>
+          <div class="panel"><div class="panel-header"><div class="panel-title" style="display:flex;align-items:center;gap:8px;"><span style="width:8px;height:8px;border-radius:50%;background:var(--success);"></span>诊断 #2 · 滞后窗口优化</div><span class="badge badge-green">机会</span></div><div class="panel-body"><div style="font-size:14px;color:var(--gray-700);line-height:1.8;" id="insight-2">加载中...</div></div></div>
+        </div>
+        <div class="grid-2 mb-6">
+          <div class="panel"><div class="panel-header"><div class="panel-title" style="display:flex;align-items:center;gap:8px;"><span style="width:8px;height:8px;border-radius:50%;background:var(--pv-gold-500);"></span>诊断 #3 · GREEN 客群深挖</div><span class="badge badge-gold">关注</span></div><div class="panel-body"><div style="font-size:14px;color:var(--gray-700);line-height:1.8;" id="insight-3">加载中...</div></div></div>
+          <div class="panel"><div class="panel-header"><div class="panel-title" style="display:flex;align-items:center;gap:8px;"><span style="width:8px;height:8px;border-radius:50%;background:var(--info);"></span>诊断 #4 · GOLD 客群策略</div><span class="badge badge-gray">信息</span></div><div class="panel-body"><div style="font-size:14px;color:var(--gray-700);line-height:1.8;" id="insight-4">加载中...</div></div></div>
+        </div>
+        <div class="panel"><div class="panel-header"><div class="panel-title" style="display:flex;align-items:center;gap:8px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--pv-green-600)" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z"/><path d="M12 6v6l4 2"/></svg>AI 智能问答</div><span style="font-size:12px;color:var(--gray-400);">基于全量数据 · 自然语言提问</span></div><div class="panel-body"><div style="display:flex;flex-direction:column;gap:var(--space-3);margin-bottom:var(--space-4);min-height:120px;" id="chat-messages"><div style="align-self:flex-start;max-width:80%;padding:10px 16px;background:var(--gray-100);color:var(--gray-700);border-radius:12px 12px 12px 4px;font-size:13px;line-height:1.7;" id="chat-answer">正在分析数据...</div></div><div style="display:flex;gap:var(--space-2);"><input type="text" placeholder="输入您的问题..." id="chat-input" style="flex:1;padding:10px 16px;border:1px solid var(--gray-200);border-radius:var(--radius-md);font-size:14px;outline:none;" /><button class="btn btn-primary" id="chat-send"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>发送</button></div></div></div>
+        <div style="margin-top:var(--space-8);padding-top:var(--space-4);border-top:1px solid var(--gray-200);text-align:center;"><span style="font-size:12px;color:var(--gray-400);">北京侨福芳草地 · 营销效能战情室 v3.0</span></div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20260716b"></script>
+</body>
+</html>

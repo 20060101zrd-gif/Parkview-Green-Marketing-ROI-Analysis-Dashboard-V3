@@ -1,21 +1,22 @@
-# ==========================================
-# 數據安全隔離 (絕對禁止上傳真實業務數據)
-# ==========================================
-*.csv
-*.xlsx
-data/*.csv
-data/*.xlsx
+.streamlit/secrets.toml
+.env
+*.env
+.env.*
 
-# Python 系統的垃圾快取文件
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-
-# 隱藏配置與虛擬環境
-.streamlit/
-.vscode/
-.DS_Store
-env/
-venv/
 .venv/
+venv/
+
+.vscode/
+.idea/
+*.swp
+*.swo
+
+*.log
+.DS_Store
+Thumbs.db
+
+# Agent 巡检输出
+data/reports/
+data/logs/

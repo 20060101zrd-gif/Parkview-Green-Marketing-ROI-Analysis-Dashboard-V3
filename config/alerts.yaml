@@ -1,0 +1,48 @@
+# ============================================================
+# ALERT THRESHOLD RULES
+# Metric-level alert conditions. The system evaluates these
+# rules after every filter change.
+# ============================================================
+
+alerts:
+  - id: "roi_critical"
+    metric: "roi"
+    condition: "< 10"
+    severity: "critical"
+    message: "Marketing ROI below 10% — urgent review of campaign allocation required."
+    recommendation: "Immediately audit underperforming coupon types and redirect budget to high-performing cohorts."
+
+  - id: "roi_warning"
+    metric: "roi"
+    condition: "< 30"
+    severity: "warning"
+    message: "Marketing ROI below 30% — margin under pressure."
+    recommendation: "Review coupon type mix and cohort targeting strategy."
+
+  - id: "conversion_low"
+    metric: "conversion_rate"
+    condition: "< 1.0"
+    severity: "warning"
+    message: "Redemption conversion rate below 1.0% — weak coupon incentive design."
+    recommendation: "Re-evaluate coupon face value and distribution channel effectiveness."
+
+  - id: "penetration_low"
+    metric: "coupon_leverage"
+    condition: "< 0.05"
+    severity: "warning"
+    message: "Coupon-driven sales penetration below 0.05% — minimal marketing leverage on overall business."
+    recommendation: "Expand coupon distribution to high-traffic customer touchpoints."
+
+  - id: "parking_imbalance"
+    metric: "parking_coupon_share"
+    condition: "> 70"
+    severity: "critical"
+    message: "Parking coupon share exceeds 70% of total issuance — severe structural misallocation."
+    recommendation: "Cut parking coupon budget by minimum 50%, reallocate to experiential coupons for high-value cohorts."
+
+  - id: "member_contribution_low"
+    metric: "member_contribution"
+    condition: "< 50"
+    severity: "info"
+    message: "Member sales contribution below 50% — member engagement gap detected."
+    recommendation: "Strengthen membership onboarding and tier-upgrade incentive programs."
