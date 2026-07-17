@@ -1,6 +1,6 @@
-import sys
-sys.path.insert(0, '.')
-from tests.test_hover_analysis import *
+import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from test_hover_analysis import *
 
 tests = [
     test_hover_selector_matches_html,

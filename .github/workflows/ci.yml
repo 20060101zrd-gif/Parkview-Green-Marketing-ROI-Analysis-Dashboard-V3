@@ -27,25 +27,20 @@ jobs:
           pip install -r requirements.txt
           pip install -r webapp/requirements.txt
 
-      - name: Run unit tests
-        run: |
-          cd tests
-          python run_tests.py
+      - name: Run unit tests (run_tests.py)
+        run: python tests/run_tests.py
 
       - name: Run five-fixes regression tests
-        run: |
-          cd tests
-          python test_five_fixes.py
+        run: python tests/test_five_fixes.py
 
       - name: Run hover analysis tests
-        run: |
-          cd tests
-          python test_hover_analysis.py
+        run: python tests/test_hover_analysis.py
 
       - name: Run lag chart tests
-        run: |
-          cd tests
-          python test_lag_chart.py
+        run: python tests/test_lag_chart.py
+
+      - name: Run scheduler tests
+        run: python tests/test_scheduler.py
 
   docker-build:
     needs: test
