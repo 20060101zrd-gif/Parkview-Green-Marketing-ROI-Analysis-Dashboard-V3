@@ -21,6 +21,7 @@ var globalData = {};
 var currentGranularity = 'weekly';
 var simulationMode = false;
 var simulationParams = [];  // [{label, action, target, pct}]
+var simulationTrendFetched = false;  // 标记当前模拟参数下是否已获取趋势预测，避免重复请求
 var cohortExpanded = false;
 var selectedLevels = [];
 var selectedAges = [];
@@ -85,8 +86,11 @@ function renderAll(data) {
     globalData = data;  // sync simulated data back to global
     updateSimulationBanner();
     loadSimulationAnalysis();
-    // Prompt 1: Fetch AI trend prediction
-    fetchSimulationTrend();
+    // Prompt 1: Fetch AI trend prediction only once per simulation state
+    if (!simulationTrendFetched) {
+      fetchSimulationTrend();
+      simulationTrendFetched = true;
+    }
   } else {
     hideSimulationBanner();
     var oldBox = document.getElementById('sim-analysis-box');
@@ -409,7 +413,10 @@ function fetchSimulationTrend(retry) {
   if (!retry) trendRetryCount = 0;
   var beforeTrend = globalData._original.trend || {};
   var beforeLag = globalData._original.lag || [];
-  var actions = simulationParams.map(function(p) { return p.label; });
+  // Send structured actions with effect + pct for dimension-based simulation
+  var actions = simulationParams.map(function(p) {
+    return { effect: p.action, pct: p.pct };
+  });
 
   var predLabel = document.getElementById('trend-prediction-label');
   var retryMsg = trendRetryCount > 0 ? ('，第 ' + trendRetryCount + ' 次重试...') : '';
@@ -475,6 +482,37 @@ function applySimulation(data) {
   if (!baselineData) baselineData = JSON.parse(JSON.stringify(data));
   var d = JSON.parse(JSON.stringify(baselineData));
   simulationParams.forEach(function(p) {
+    // ---- Symmetric dimension branches (new architecture) ----
+    if (p.action === 'coupon_volume') {
+      var factor = 1 + p.pct / 100;
+      if (d.structure) d.structure.forEach(function(s) {
+        if (s.name.indexOf('停车') >= 0) { s.count = Math.max(0, Math.round(s.count * factor)); }
+      });
+      if (d.kpis) {
+        d.kpis.roi = Math.round(d.kpis.roi * (1 + (p.pct / 100) * 0.5));
+        d.kpis.total_issued = Math.round(d.kpis.total_issued * factor);
+      }
+    }
+    if (p.action === 'sales_efficiency') {
+      var sf = 1 + p.pct / 100;
+      if (d.kpis) {
+        d.kpis.roi = Math.round(d.kpis.roi * (1 + (p.pct / 100) * 0.3));
+        d.kpis.total_sales = Math.round(d.kpis.total_sales * sf);
+        d.kpis.aov = Math.round(d.kpis.aov * sf);
+      }
+      if (d.cohorts) d.cohorts.forEach(function(c) {
+        c.sales = Math.round(c.sales * sf);
+      });
+    }
+    if (p.action === 'lag_correlation') {
+      var lf = p.pct / 100;
+      if (d.kpis) {
+        d.kpis.conversion_rate = Math.round((d.kpis.conversion_rate || 0) * (1 + lf));
+        d.kpis.real_used = Math.round((d.kpis.real_used || 0) * (1 + lf));
+        d.kpis.roi = Math.round((d.kpis.roi || 0) * (1 + lf * 0.5));
+      }
+    }
+    // ---- Legacy branches (backward compatible) ----
     if (p.action === 'cut_parking') {
       var pct = p.pct / 100;
       if (d.structure) d.structure.forEach(function(s) { if (s.name.indexOf('停车') >= 0) { s.count = Math.round(s.count * (1 - pct)); } });
@@ -506,6 +544,7 @@ function adoptSuggestion(label, action, pct) {
   if (simulationParams.find(function(p) { return p.label === label; })) return;
   simulationParams.push({ label: label, action: action, pct: pct });
   simulationMode = true;
+  simulationTrendFetched = false;  // 模拟参数变化，需要重新获取预测
   // Issue 1: never reset baselineData — it's immutable once set
   renderAll(globalData);
   // Fix 4: Re-bind ask buttons after entering simulation mode (LLM mode)
@@ -548,6 +587,37 @@ function resetSimulation() {
 window.adoptSuggestion = adoptSuggestion;
 window.resetSimulation = resetSimulation;
 window.removeSuggestion = removeSuggestion;
+
+// ===== Symmetric Dimension Architecture — dynamic button renderer =====
+// Renders "采纳建议" buttons from structured recommendation dicts {text, action, effect, pct}.
+// Falls back to legacy string format (treats as label with defaultEffect/defaultPct).
+// If recs is empty, synthesizes a single default button so the action is always available.
+// Button style matches original: standalone btn btn-primary btn-sm with "采纳建议" text.
+function renderActionableRecs(recs, defaultEffect, defaultPct, defaultLabel) {
+  defaultEffect = defaultEffect || 'sales_efficiency';
+  defaultPct = (defaultPct != null) ? defaultPct : 10;
+  if (!recs || recs.length === 0) {
+    // Synthesize a single fallback recommendation so the button is always present
+    recs = [{ text: defaultLabel || '采纳此建议', action: defaultLabel || '采纳建议', effect: defaultEffect, pct: defaultPct }];
+  }
+  var html = '';
+  recs.slice(0, 3).forEach(function(r) {
+    var label, action, effect, pct;
+    if (typeof r === 'object' && r !== null) {
+      label = r.action || r.text || '';
+      effect = r.effect || defaultEffect;
+      pct = (r.pct != null) ? r.pct : defaultPct;
+    } else {
+      label = String(r);
+      effect = defaultEffect;
+      pct = defaultPct;
+    }
+    var escLabel = label.replace(/'/g, "\\'");
+    html += '<button class="btn btn-primary btn-sm" style="margin-top:8px;" onclick="adoptSuggestion(\'' + escLabel + '\',\'' + effect + '\',' + pct + ')">采纳建议</button>';
+  });
+  return html;
+}
+
 function updateSimulationBanner() {
   var banner = $('#simulation-banner');
   if (!banner) {
@@ -722,6 +792,14 @@ function fillKPI(cardId, val, unit, sub, isSimulated, originalVal, tooltip) {
 
     if (unit && unit.length > 0) {
       html += '<span class="unit" style="font-size:13px;font-weight:500;color:#6b7280;flex-shrink:0;margin-left:2px;">' + unit + '</span>';
+    }
+
+    // Simulation change badge: show ▲▼ + percentage when data has changed (same style as cost structure bars)
+    if (isSimulated && originalVal != null) {
+      var mark = simChangeMark(val, originalVal);
+      if (mark) {
+        html += '<span class="sim-change-badge" style="font-size:11px;font-weight:600;margin-left:6px;white-space:nowrap;flex-shrink:0;color:' + mark.color + ';">' + mark.arrow + ' ' + mark.text + '</span>';
+      }
     }
 
     valueEl.innerHTML = html;
@@ -1468,7 +1546,11 @@ function updateAIInsight(insight) {
   // ===== #1: Resource misallocation =====
   var i1 = document.getElementById('insight-1');
   if (i1) {
-    var recList = recs.length ? recs.slice(0,3).map(function(r) { return '<li>' + r + '</li>'; }).join('') : '<li>削减停车券预算 60%</li><li>重新分配至高净值业态体验券</li>';
+    var recList = recs.length ? recs.slice(0,3).map(function(r) {
+      var text = typeof r === 'object' ? (r.text || r.action || '') : r;
+      return '<li>' + text + '</li>';
+    }).join('') : '<li>削减停车券预算 60%</li><li>重新分配至高净值业态体验券</li>';
+    var actionRecs = renderActionableRecs(recs, 'coupon_volume', -60, '削减停车券60%');
     i1.innerHTML =
       '<p style="font-weight:600;margin-bottom:6px;">核心诊断</p>' +
       '<p style="font-size:13px;color:var(--gray-600);margin-bottom:10px;line-height:1.6;">' +
@@ -1476,7 +1558,7 @@ function updateAIInsight(insight) {
       '</p>' +
       '<p style="font-weight:600;margin-bottom:6px;">优化建议</p>' +
       '<ul style="padding-left:20px;margin:0;font-size:13px;color:var(--gray-600);line-height:1.8;">' + recList + '</ul>' +
-      '<button class="btn btn-primary btn-sm" style="margin-top:10px;" onclick="adoptSuggestion(\'削减停车券60%\',\'cut_parking\',60)">采纳建议</button>' +
+      actionRecs +
       engineTag;
   }
 
@@ -1500,21 +1582,24 @@ function updateAIInsight(insight) {
       '<ul style="padding-left:0;margin:0;">' + alertHtml + '</ul>' +
       '<p style="font-weight:600;margin:10px 0 6px 0;">优化建议</p>' +
       '<p style="font-size:13px;color:var(--gray-600);margin:0;line-height:1.6;">集中发券至最优滞后窗口（消费高峰前 3 天），提升券的转化效率。</p>' +
-      '<button class="btn btn-primary btn-sm" style="margin-top:10px;" onclick="adoptSuggestion(\'优化滞后窗口\',\'optimize_lag\',20)">采纳建议</button>' +
+      renderActionableRecs(recs, 'lag_correlation', 20, '优化滞后窗口') +
       engineTag;
   }
 
   // ===== #3: GREEN cohort deep dive =====
   var i3 = document.getElementById('insight-3');
   if (i3) {
-    var greenRecs = recs.length > 1 ? recs.slice(1, 4).map(function(r) { return '<li>' + r + '</li>'; }).join('') :
+    var greenRecs = recs.length > 1 ? recs.slice(1, 4).map(function(r) {
+      var text = typeof r === 'object' ? (r.text || r.action || '') : r;
+      return '<li>' + text + '</li>';
+    }).join('') :
       '<li>GREEN 客群提升发券频次</li><li>设计专属高额满减体验券</li><li>定向推送高净值业态活动</li>';
     i3.innerHTML =
       '<p style="font-weight:600;margin-bottom:6px;">核心诊断</p>' +
       '<p style="font-size:13px;color:var(--gray-600);margin-bottom:10px;line-height:1.6;">菁英会员/80后是最优 ROI 转化客群，客单价高、核销意愿强，目前投放力度不足。</p>' +
       '<p style="font-weight:600;margin-bottom:6px;">深挖策略</p>' +
       '<ul style="padding-left:20px;margin:0;font-size:13px;color:var(--gray-600);line-height:1.8;">' + greenRecs + '</ul>' +
-      '<button class="btn btn-primary btn-sm" style="margin-top:10px;" onclick="adoptSuggestion(\'GREEN客群加发30%\',\'boost_green\',30)">采纳建议</button>' +
+      renderActionableRecs(recs, 'sales_efficiency', 30, 'GREEN客群加发30%') +
       engineTag;
   }
 
@@ -1532,7 +1617,7 @@ function updateAIInsight(insight) {
         '<li>GOLD 客群走体验式营销，避免直接折扣侵蚀毛利</li>' +
         '<li>关注高消费低核销人群的转化路径</li>' +
       '</ul>' +
-      '<button class="btn btn-primary btn-sm" style="margin-top:10px;" onclick="adoptSuggestion(\'RED客群熔断\',\'melt_red\',50)">采纳建议</button>' +
+      renderActionableRecs(recs, 'coupon_volume', -80, 'RED客群熔断') +
       engineTag;
   }
 }

@@ -88,9 +88,12 @@ def _build_template_insight(kpis, structure, cohorts, lag_data):
             'severity': 'critical',
             'message': f'停车券占发券总量 {parking_share:.0f}%，核销率极低，存在严重结构性错配。'
         })
-        recommendations.append(
-            '将停车券预算削减 50%（约 CNY 120,000），重新分配至高 ROI 客群专属体验券。'
-        )
+        recommendations.append({
+            'text': f'将停车券预算削减 50%（约 CNY 120,000），重新分配至高 ROI 客群专属体验券。',
+            'action': '削减停车券50%',
+            'effect': 'coupon_volume',
+            'pct': -50,
+        })
 
     if roi < 10:
         alerts.append({
@@ -125,9 +128,12 @@ def _build_template_insight(kpis, structure, cohorts, lag_data):
             f'客单价 CNY {best["atv"]:,.0f}，核销率 {best["redeem_rate"]:.1f}%。'
             f'建议加大该客群的营销预算倾斜。'
         )
-        recommendations.append(
-            f'将 80% 营销预算集中投放至 {best["level"]}/{best["age_group"]} 客群，预计 ROI 可提升 3 倍。'
-        )
+        recommendations.append({
+            'text': f'将 80% 营销预算集中投放至 {best["level"]}/{best["age_group"]} 客群，预计 ROI 可提升 3 倍。',
+            'action': f'加大{best["level"]}客群投放',
+            'effect': 'sales_efficiency',
+            'pct': 30,
+        })
 
     if drain:
         worst = drain[0]
@@ -136,9 +142,12 @@ def _build_template_insight(kpis, structure, cohorts, lag_data):
             'message': f'{worst["level"]}/{worst["age_group"]} 被判定为券效耗损型客群：'
                        f'人均领券 {worst["avg_coupons"]:.0f} 张，客单价仅 CNY {worst["atv"]:,.0f}。'
         })
-        recommendations.append(
-            f'对 {worst["level"]}/{worst["age_group"]} 客群实施发券熔断，限制 3 张/人/月。'
-        )
+        recommendations.append({
+            'text': f'对 {worst["level"]}/{worst["age_group"]} 客群实施发券熔断，限制 3 张/人/月。',
+            'action': f'熔断{worst["level"]}客群',
+            'effect': 'coupon_volume',
+            'pct': -80,
+        })
 
     # Executive summary
     exec_parts = []
@@ -156,7 +165,7 @@ def _build_template_insight(kpis, structure, cohorts, lag_data):
     return {
         'executive_summary': ' '.join(exec_parts) if exec_parts else '当前数据范围不足，无法生成完整诊断。',
         'alerts': alerts or [{'severity': 'info', 'message': '当前数据范围内未检测到关键告警。'}],
-        'recommendations': recommendations or ['持续监控各客群表现，关注新出现的转化模式。'],
+        'recommendations': recommendations or [{'text': '持续监控各客群表现，关注新出现的转化模式。', 'action': '持续监控', 'effect': 'sales_efficiency', 'pct': 5}],
         'top_finding': insights[0][:80] if insights else '数据范围过窄，无法形成明确结论。',
         'generated_by': '本地规则引擎',
     }
@@ -210,8 +219,13 @@ def _call_deepseek(kpis, structure, cohorts, anomalies, api_key):
                 "严格返回 JSON 格式，不要 markdown 代码块，字段如下："
                 '{"executive_summary": "100字以内中文核心结论",'
                 '"alerts": [{"severity":"critical/warning/info","message":"..."}],'
-                '"recommendations": ["具体建议1","具体建议2","具体建议3"],'
-                '"top_finding": "最重要发现50字以内"}'
+                '"recommendations": [{"text": "建议文字描述", "action": "建议标题", "effect": "coupon_volume|sales_efficiency|lag_correlation", "pct": 数值}],'
+                '"top_finding": "最重要发现50字以内"}\n'
+                "effect 字段只能从以下三个对称维度中选择：\n"
+                "- coupon_volume: 调整发券量，正数为增发，负数为削减\n"
+                "- sales_efficiency: 调整销售额/转化效率，正数为提升，负数为下降\n"
+                "- lag_correlation: 调整发券滞后效应强度，正数为增强相关性，负数为减弱\n"
+                "pct 为百分比数值，如 30 表示 +30%，-60 表示 -60%。"
                 "不要用 emoji，不要用 ** 加粗，纯中文。"
             )},
             {"role": "user", "content": "\n".join(lines)}
@@ -305,11 +319,49 @@ def generate_analysis(analysis_type, kpis=None, structure=None, cohorts=None, la
                 return data
             except Exception:
                 pass
-        # Local fallback for page overview
+        # Local fallback for page overview — derive findings from real data
+        findings = []
+        recommendation = '可点击各模块标题查看针对性分析'
+        summary = f'当前{page_label}页面已加载数据。'
+
+        if kpis:
+            roi = kpis.get('roi', 0)
+            conversion = kpis.get('conversion_rate', 0)
+            summary = f'营销投资回报率 {roi}%，核销率 {conversion}%，整体呈{"正向" if roi > 30 else "承压"}状态。'
+            if roi < 10:
+                findings.append(f'ROI 仅 {roi}%，低于 10% 安全线，需立即审查营销效果')
+            elif roi < 30:
+                findings.append(f'ROI 为 {roi}%，低于 30% 警戒线，利润空间承压')
+            else:
+                findings.append(f'ROI 达到 {roi}%，整体回报健康')
+            if conversion < 1.0:
+                findings.append(f'核销转化率仅 {conversion}%，券激励设计需要重新评估')
+
+        if structure:
+            parking = next((s for s in structure if '停车' in s.get('name', '')), None)
+            if parking and parking.get('pct', 0) > 70:
+                findings.append(f'停车券占比 {parking["pct"]}%，结构单一，存在资源错配')
+                recommendation = '建议削减停车券预算，转移至高 ROI 客群专属体验券'
+
+        if cohorts:
+            tags = {'GREEN': 0, 'GOLD': 0, 'RED': 0, 'GRAY': 0}
+            for c in cohorts: tags[c.get('tag', 'GRAY')] = tags.get(c.get('tag', 'GRAY'), 0) + 1
+            if tags['RED'] > 0:
+                findings.append(f'识别出 {tags["RED"]} 个 RED 耗损型客群，建议实施发券熔断')
+            if tags['GREEN'] > 0:
+                findings.append(f'识别出 {tags["GREEN"]} 个 GREEN 高转化客群，建议加大投放')
+
+        if lag_data:
+            best = max(lag_data, key=lambda x: x.get('r', 0))
+            findings.append(f'最佳发券窗口为消费前 {best.get("lag", 0)} 天（r={best.get("r", 0):.2f}）')
+
+        if not findings:
+            findings = ['数据已加载完成，可进入各模块查看详细分析']
+
         return {
-            'summary': f'当前{page_label}页面已加载数据，包含{len(cohorts) if cohorts else 0}个客群组的分析视图。' if cohorts else '数据已就绪，可查看各模块详情。',
-            'findings': ['KPI 指标已更新', '客群标签已计算', '趋势数据已加载'],
-            'recommendation': '可点击各模块标题查看针对性分析',
+            'summary': summary,
+            'findings': findings[:3],
+            'recommendation': recommendation,
             'generated_by': '本地规则引擎',
         }
 
@@ -494,6 +546,48 @@ def _contains_inconsistent_roi(answer: str, actual_roi: float) -> bool:
     return False
 
 
+# ===== Symmetric Dimension Architecture =====
+# Each dimension is bidirectional: positive pct = enhance, negative pct = reduce.
+# Extensible: add a new row to this dict + one transform function to support new dimensions.
+
+def _scale_coupon(trend, lag, pct):
+    """coupon_volume: scale all coupon values by (1 + pct/100)."""
+    factor = 1 + pct / 100.0
+    for i in range(len(trend.get('coupon', []))):
+        trend['coupon'][i] = max(0, int((trend['coupon'][i] or 0) * factor))
+    return trend, lag
+
+def _scale_sales(trend, lag, pct):
+    """sales_efficiency: scale all sales values by (1 + pct/100)."""
+    factor = 1 + pct / 100.0
+    for i in range(len(trend.get('sales', []))):
+        trend['sales'][i] = max(1, int((trend['sales'][i] or 0) * factor))
+    return trend, lag
+
+def _offset_lag(trend, lag, pct):
+    """lag_correlation: shift all lag r-values by +pct/100 (additive, clamped to [-1, 1])."""
+    delta = pct / 100.0
+    for l in lag:
+        l['r'] = round(max(-1.0, min(1.0, (l.get('r', 0) or 0) + delta)), 2)
+    return trend, lag
+
+DIMENSION_TRANSFORM = {
+    'coupon_volume':     _scale_coupon,
+    'sales_efficiency':  _scale_sales,
+    'lag_correlation':   _offset_lag,
+}
+
+# Backward-compatible legacy action name mapping
+_LEGACY_ACTION_MAP = {
+    'cut_parking':   ('coupon_volume',    -60),
+    'boost_green':   ('sales_efficiency',  15),
+    'melt_red':      ('coupon_volume',    -80),
+    'optimize_lag':  ('lag_correlation',   15),
+}
+
+# 模拟预测结果缓存，避免重复调用LLM导致结果波动
+_TREND_SIMULATION_CACHE = {}
+
 def predict_trend_simulation(before_trend, before_lag, actions):
     """
     Prompt 1: AI-powered trend + lag prediction after simulation.
@@ -501,6 +595,24 @@ def predict_trend_simulation(before_trend, before_lag, actions):
     Falls back to local rules if DeepSeek is unavailable.
     """
     import copy
+    import hashlib
+    import json
+
+    # 生成缓存key：原始数据+动作的哈希
+    def _serialize_action(a):
+        if isinstance(a, dict):
+            return json.dumps(a, sort_keys=True, default=str)
+        return str(a)
+    cache_key_raw = json.dumps({
+        'before_trend': before_trend,
+        'before_lag': before_lag,
+        'actions': sorted([_serialize_action(a) for a in actions])
+    }, sort_keys=True, default=str)
+    cache_key = hashlib.md5(cache_key_raw.encode('utf-8')).hexdigest()
+    
+    # 命中缓存直接返回
+    if cache_key in _TREND_SIMULATION_CACHE:
+        return copy.deepcopy(_TREND_SIMULATION_CACHE[cache_key])
 
     api_key = _get_deepseek_key()
     if api_key:
@@ -536,7 +648,8 @@ def predict_trend_simulation(before_trend, before_lag, actions):
             response = client.chat.completions.create(
                 model="deepseek-chat",
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.3, max_tokens=1500, timeout=30,
+                temperature=0, max_tokens=1500, timeout=30,
+                seed=42  # 固定随机种子，进一步保证输出确定性
             )
             content = response.choices[0].message.content.strip()
             if content.startswith("```"):
@@ -562,33 +675,45 @@ def predict_trend_simulation(before_trend, before_lag, actions):
             best_lag_day = int(result.get('best_lag_day', 0) or 0)
             if not best_lag_day and normalized_lag:
                 best_lag_day = max(normalized_lag, key=lambda x: x.get('r', 0)).get('lag', 3)
-            return {
+            result = {
                 'trend': normalized_trend,
                 'lag': normalized_lag,
                 'best_lag_day': best_lag_day,
                 'predicted_by': 'DeepSeek LLM',
             }
+            _TREND_SIMULATION_CACHE[cache_key] = copy.deepcopy(result)
+            return result
         except Exception as e:
             print(f'[Trend Prediction] DeepSeek failed: {e}')
 
-    # === Local fallback rules ===
+    # === Local fallback rules (symmetric dimension architecture) ===
     trend = copy.deepcopy(before_trend) if before_trend else {'labels': [], 'coupon': [], 'sales': [], 'correlation': 0}
     lag = copy.deepcopy(before_lag) if before_lag else []
     best_lag_day = max(lag, key=lambda x: x.get('r', 0)).get('lag', 3) if lag else 3
 
     for action in actions:
-        if 'cut_parking' in action:
-            for i in range(len(trend.get('coupon', []))):
-                trend['coupon'][i] = max(0, int((trend['coupon'][i] or 0) * 0.6))
-            for l in lag:
-                l['r'] = round((l.get('r', 0) or 0) * 0.7, 2)
-        if 'boost_green' in action:
-            for i in range(len(trend.get('sales', []))):
-                trend['sales'][i] = int((trend['sales'][i] or 0) * 1.05)
-        if 'optimize_lag' in action:
-            for l in lag:
-                l['r'] = round(min(1.0, (l.get('r', 0) or 0) + 0.15), 2)
-            if lag:
+        effect = None
+        pct = 0
+
+        # New format: action is a dict with {effect, pct}
+        if isinstance(action, dict):
+            effect = action.get('effect', '')
+            pct = action.get('pct', 0)
+        # Backward compatible: action is a legacy string name
+        elif isinstance(action, str):
+            mapped = _LEGACY_ACTION_MAP.get(action)
+            if mapped:
+                effect, pct = mapped
+            else:
+                # Try substring match for legacy partial names
+                for legacy_key, (eff, p) in _LEGACY_ACTION_MAP.items():
+                    if legacy_key in action:
+                        effect, pct = eff, p
+                        break
+
+        if effect and effect in DIMENSION_TRANSFORM:
+            trend, lag = DIMENSION_TRANSFORM[effect](trend, lag, pct)
+            if effect == 'lag_correlation' and lag:
                 best_lag_day = max(lag, key=lambda x: x.get('r', 0) or 0).get('lag', best_lag_day)
 
     # Ensure no None/NaN values
@@ -601,9 +726,11 @@ def predict_trend_simulation(before_trend, before_lag, actions):
         if l.get('r') is None or (isinstance(l['r'], float) and (l['r'] != l['r'])):
             l['r'] = 0
 
-    return {
+    result = {
         'trend': trend,
         'lag': lag,
         'best_lag_day': best_lag_day,
         'predicted_by': '本地规则引擎',
     }
+    _TREND_SIMULATION_CACHE[cache_key] = copy.deepcopy(result)
+    return result

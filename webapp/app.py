@@ -255,7 +255,12 @@ def api_export_report():
     file_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     alert_lines = "".join(f"- **[{a.get('severity', '')}]** {a.get('message', '')}\n" for a in alerts)
-    rec_lines = "".join(f"{i}. {r}\n" for i, r in enumerate(recommendations, 1))
+    def _fmt(r):
+        """Handle both string and dict recommendation formats."""
+        if isinstance(r, dict):
+            return r.get('text', r.get('action', ''))
+        return str(r)
+    rec_lines = "".join(f"{i}. {_fmt(r)}\n" for i, r in enumerate(recommendations, 1))
 
     report = f"""# 营销 ROI 战情室 — 诊断报告
 

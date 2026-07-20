@@ -2,9 +2,8 @@
 
 > **Parkview Green Marketing ROI Command Center**
 >
-> 商业综合体优惠券营销 ROI 全链路分析平台 · Streamlit + Flask 双应用 · DeepSeek AI 业务诊断
+> 商业综合体优惠券营销 ROI 全链路分析平台 · Flask Web 应用 · DeepSeek AI 业务诊断
 
-![Streamlit](https://img.shields.io/badge/Streamlit-1.32%2B-FF4B4B?style=flat-square&logo=streamlit)
 ![Flask](https://img.shields.io/badge/Flask-3.0%2B-000000?style=flat-square&logo=flask)
 ![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python)
 ![scikit-learn](https://img.shields.io/badge/scikit--learn-1.3%2B-F7931E?style=flat-square&logo=scikit-learn)
@@ -70,7 +69,7 @@
 
 ## 三、LLM 模式 — DeepSeek AI 业务诊断
 
-系统默认**本地模式**（零外部调用），点击右上角切换到 LLM 模式后，DeepSeek 大模型接入。
+系统默认**本地模式**（本地规则引擎生成结构化诊断，零外部调用），点击右上角切换到 LLM 模式后，DeepSeek 大模型接入。
 
 ### 本地模式下的智能诊室
 
@@ -78,35 +77,25 @@
 
 ![智能诊室 - 本地模式提示](screenshots/09_insight_local_mode.png)
 
-### LLM 模式 · 四种 AI 分析卡片
+### 3.1 AI 分析
 
-**说明**：切换到 LLM 模式后，DeepSeek 自动生成四类诊断卡片（严重告警 / 预警提示 / 信息摘要 / 优化建议），每条建议可一键采纳进模拟参数。引擎标识「引擎：DeepSeek LLM」。
+按工作流顺序：页面分析 → 选取 → 问一问 → AI 问答。
 
-![智能诊室 - LLM 四种诊断卡片](screenshots/10_insight_llm_diagnostic_cards.png)
+**页面分析 · 综合诊断摘要（战情摘要页）**
 
-### LLM 模式 · 滑动选取进行分析（可锁定当前分析）
-
-**说明**：可以滑动选取任意模块标题进行 AI 分析。顶部诊断卡片支持「解锁 / 收起」按钮——锁定时卡片固定悬浮在页面顶部不随滚动消失；收起后所有当前分析都隐藏，需要时一键展开。下图展示的就是锁定状态下的 KPI 总览诊断卡片。
-
-![LLM 模式 · 锁定当前分析（KPI 总览诊断）](screenshots/13_kpi_overview_with_ai.png)
-
-### LLM 模式 · 综合诊断摘要（战情摘要页）
-
-**说明**：智能诊室的综合诊断卡片，作为"战情指挥"悬浮在页面顶部，把所有分析浓缩为一段话。
+**说明**：智能诊室的综合诊断卡片，作为"战情指挥"悬浮在页面顶部，把全页分析浓缩为一段话。
 
 ![战情摘要 + AI 综合诊断摘要](screenshots/12_executive_with_ai_summary.png)
 
-### LLM 模式 · 四种 AI 分析卡片
+**滑动选取进行分析（针对某模块的详细分析）**
 
-**说明**：切换到 LLM 模式后，DeepSeek 自动生成四类诊断卡片（严重告警 / 预警提示 / 信息摘要 / 优化建议），每条建议可一键采纳进模拟参数。引擎标识「引擎：DeepSeek LLM」。
+**说明**：可以滑动选取任意模块标题，针对所选模块做详细 AI 分析。顶部诊断卡片支持「解锁 / 收起」按钮——锁定时卡片固定悬浮在页面顶部不随滚动消失；收起后所有当前分析都隐藏，需要时一键展开。下图展示的就是锁定状态下的 KPI 总览诊断卡片。
 
-![智能诊室 - LLM 四种诊断卡片](screenshots/10_insight_llm_diagnostic_cards.png)
+![LLM 模式 · 锁定当前分析（KPI 总览诊断）](screenshots/13_kpi_overview_with_ai.png)
 
----
+**问一问（对模块更详细的提问分析）**
 
-## 四、问一问 — 跨页悬浮 / 可隐藏 / 左下角找回
-
-**说明**：点击任意模块旁的「问」按钮，弹出针对该模块的 AI 问答抽屉。**支持三个特性**：
+**说明**：点击任意模块旁的「问」按钮，弹出针对该模块的 AI 问答抽屉，可对该模块做更详细的提问分析。**支持三个特性**：
 
 - **跨页悬浮**：抽屉弹出后，切换到其他页面时它仍跟随显示
 - **可隐藏**：点击最小化按钮可把抽屉隐藏到左下角的"找回栏"
@@ -114,27 +103,29 @@
 
 ![问一问抽屉 · 跨页悬浮 + 最小化到左下角 tray bar](screenshots/14_ask_drawer_cross_page.png)
 
----
+**AI 智能问答（全局数据上下文，随机四个可换一批）**
 
-## 五、AI 智能问答 — 全局数据上下文
-
-**说明**：在战情摘要页的 AI 智能问答面板。预置四个高频追问（你能做什么？会员贡献占比多？为什么停车券转化这么低？哪个客群的转化效率最高？），也支持自由提问。基于全局数据上下文，DeepSeek 给出针对性回答。
+**说明**：在战情摘要页的 AI 智能问答面板。随机展示四个追问，可点「换一批」刷新，也支持自由提问。基于全局数据上下文，DeepSeek 给出针对性回答。面板下方展示当前核心 KPI 快照，便于追问时快速参考数据。
 
 ![AI 智能问答面板](screenshots/11_ai_chat_panel.png)
 
----
+### 3.2 模拟模式
 
-## 六、採纳建议 — 模拟推演
+在 AI 诊断卡片上点击「采纳建议」后，建议会自动加入模拟参数集合。顶部模拟横幅实时显示已采纳的所有参数（带 × 可单独移除），KPI 卡片同步展示模拟值 vs 原始值对比，趋势图叠加原始曲线（实色）与模拟曲线（虚线）。
 
-**说明**：在 AI 诊断卡片上点击「采纳建议」后，建议会自动加入模拟参数集合。顶部模拟横幅实时显示已采纳的所有参数（带 × 可单独移除），KPI 卡片同步展示模拟值 vs 原始值对比，趋势图叠加原始曲线（实色）与模拟曲线（虚线）。
+**四种 AI 分析卡片**
 
-### 模拟模式 · KPI 对比
+**说明**：切换到 LLM 模式后，DeepSeek 自动生成四类诊断卡片（严重告警 / 预警提示 / 信息摘要 / 优化建议），每条建议可一键采纳进模拟参数。引擎标识「引擎：DeepSeek LLM」。
+
+![智能诊室 - LLM 四种诊断卡片](screenshots/10_insight_llm_diagnostic_cards.png)
+
+**模拟模式 · KPI 对比**
 
 ![模拟模式 - 4 条参数已采纳 + KPI 对比](screenshots/15_flask_simulation_mode.png)
 
-模拟横幅显示 4 条已采纳参数（削减停车券 60% / 优化滞后窗口 / GREEN 客群 +30% / RED 客群 -80%），每条参数带 × 移除按钮。KPI 卡片底部显示「AI分析」注解，对比模拟值与原始值的变化。
+模拟横幅显示 4 条已采纳参数（削减停车券 60% / 优化滞后窗口 / GREEN 客群 +30% / RED 客群 -80%），每条参数带 × 移除按钮。KPI 卡片数值旁直接显示 ↑↓ 变化箭头与百分比（绿色上升、红色下降），底部「AI分析」注解补充说明变化原因。
 
-### 模拟模式 · 趋势线对比
+**模拟模式 · 趋势线对比**
 
 ![模拟模式 - 趋势线对比](screenshots/16_trend_lag_with_simulation.png)
 
@@ -158,14 +149,13 @@
 同比环比       ├── IsolationForest 异常检测
                └── KMeans 客群聚类 (k=4)
           │
-    ┌─────┴─────┐
-    ▼           ▼
-Streamlit      Flask
-(端口 8501)    (端口 8050)
-6 页 BI 看板    REST API + SPA
+          ▼
+        Flask
+    (端口 8050)
+  REST API + SPA
 ```
 
-两个应用共享同一套数据、同一套 KPI 定义、同一个 AI 引擎。Streamlit 适合分析师深度探索，Flask Web 应用适合嵌入内部系统或分享只读链接。
+应用共享同一套数据、同一套 KPI 定义、同一个 AI 引擎。Flask Web 应用适合嵌入内部系统或分享只读链接。
 
 ---
 
@@ -173,7 +163,7 @@ Streamlit      Flask
 
 | 模块 | 做什么 | 技术实现 |
 |:---|:---|:---|
-| 战情摘要 | 4 张 KPI 卡片 + 告警横幅 + 趋势图 + 结构图，一眼看清全局 | Streamlit + Plotly + 自定义玻璃态 CSS |
+| 战情摘要 | 4 张 KPI 卡片 + 告警横幅 + 趋势图 + 结构图，一眼看清全局 | Flask + Chart.js + 自定义玻璃态 CSS |
 | KPI 总览 | 8 张 KPI 详情卡 + 度量值字典表（含公式） | MetricEngine 统一计算 + ComparisonEngine 同比环比 |
 | 投入产出结构 | 券种（成本）vs 业态销售额（产出）左右对比 | Plotly 环形图 + 横向条形图 |
 | 趋势滞后分析 | 双轴时间序列 + 可调滞后窗口 + Pearson 相关 + 异常检测 | Plotly + scikit-learn IsolationForest |
@@ -262,13 +252,9 @@ pip install -r requirements.txt
 # 2. 准备数据（放入 data/ 目录）
 #    - BI_Dashboard_Ready_Data.csv  （发券记录）
 #    - 销售查询.csv                 （POS 销售流水）
-#    也可以在启动后通过侧边栏直接上传
+#    也可以在启动后通过页面上传
 
-# 3. 启动 Streamlit 看板
-streamlit run app.py
-# → http://localhost:8501
-
-# 4. 启动 Flask Web 应用（可选）
+# 3. 启动 Flask Web 应用
 pip install -r webapp/requirements.txt
 python webapp/app.py
 # → http://localhost:8050
@@ -278,8 +264,7 @@ python webapp/app.py
 
 ```bash
 docker compose up -d
-# Streamlit → http://localhost:8501
-# Flask     → http://localhost:8050
+# Flask → http://localhost:8050
 ```
 
 **启用 AI 洞察（可选）：** 在 [platform.deepseek.com](https://platform.deepseek.com) 获取 API Key，写入 `.streamlit/secrets.toml`：
@@ -307,21 +292,21 @@ DEEPSEEK_API_KEY = "sk-xxxxxxxx"
 
 ```
 Parkview_Green_Marketing_ROI_Analysis_Dashboard/
-├── app.py                    # Streamlit 入口
 ├── agent_scheduler.py        # 定时巡检脚本
-├── Dockerfile                # Streamlit 容器
 ├── Dockerfile.webapp         # Flask 容器
-├── docker-compose.yml        # 双服务编排
+├── docker-compose.yml        # 服务编排
 ├── render.yaml               # Render.com 部署
 ├── requirements.txt
 │
-├── pages/                    # Streamlit 6 个页面
 ├── config/                   # YAML 配置（所有业务规则）
 ├── semantic_layer/           # 统一 KPI 计算
 ├── ai_engine/                # AI & ML
 ├── data_engine/              # 数据加载
-├── components/               # Streamlit 复用组件
 ├── webapp/                   # Flask Web 应用
+│   ├── app.py                # Flask 入口
+│   ├── services/             # 后端 API 服务
+│   ├── static/               # 前端静态资源（CSS/JS）
+│   └── templates/            # HTML 模板
 ├── tests/                    # 测试
 ├── screenshots/              # 产品截图 (17 张)
 ├── data/                     # CSV 数据文件
@@ -343,8 +328,7 @@ Parkview_Green_Marketing_ROI_Analysis_Dashboard/
 4. python tests/test_hover_analysis.py
 5. python tests/test_lag_chart.py
 6. pytest tests/test_scheduler.py -v
-7. docker build Dockerfile
-8. docker build Dockerfile.webapp
+7. docker build Dockerfile.webapp
 ```
 
 ---
@@ -353,9 +337,8 @@ Parkview_Green_Marketing_ROI_Analysis_Dashboard/
 
 | 层 | 技术 |
 |:---|:---|
-| BI 框架 | Streamlit 1.32+ |
 | Web 框架 | Flask 3.0+ |
-| 可视化 | Plotly, Matplotlib, Chart.js, ECharts |
+| 可视化 | Chart.js, Plotly, Matplotlib, ECharts |
 | 数据处理 | Pandas 2.0+, NumPy |
 | 机器学习 | scikit-learn 1.3+ (IsolationForest, KMeans) |
 | AI 大模型 | DeepSeek (OpenAI SDK) |
@@ -372,6 +355,51 @@ Parkview_Green_Marketing_ROI_Analysis_Dashboard/
 - 固定 6 页分析模块，不支持像 Power BI 一样自由拖拽自定义图表
 - DeepSeek 模式下 AI 洞察需网络连接；本地模式下降级为规则引擎
 - 当前仅支持 CSV 文件，数据库直连需自行扩展
+
+---
+
+## 对称维度架构 (Symmetric Dimension Architecture)
+
+### 为什么不 100% 让 AI 自由输出建议
+
+模拟模式中，采纳建议后系统需要**确定性地**计算优化后的趋势数值。如果让 DeepSeek LLM 直接生成数值（发券量、销售额、滞后系数），即使设置 `temperature=0` 和 `seed=42`，LLM 仍会引入不可控的数值波动——同样的建议每次输出不同。
+
+因此采用**分层架构**：
+- **AI 层**：DeepSeek 自由生成建议的**语义描述**（`text`）+ 选择**变换维度**（`effect`）+ 设置**变换幅度**（`pct`）
+- **规则层**：本地规则引擎根据 `effect` 和 `pct` 执行**确定性数学变换**（乘法/加法），保证结果可复现
+
+### 三个对称维度
+
+每个维度是**双向的**：正 `pct` = 增强，负 `pct` = 削减。
+
+| 维度 | 变换逻辑 | +30% 含义 | -50% 含义 |
+|:---|:---|:---|:---|
+| `coupon_volume` | `value × (1 + pct/100)` | 发券量提升 30% | 发券量削减 50% |
+| `sales_efficiency` | `value × (1 + pct/100)` | 销售额/转化效率提升 30% | 销售额下降 50% |
+| `lag_correlation` | `r + pct/100`（加性，钳制在 [-1,1]） | 滞后相关性增强 0.3 | 滞后相关性减弱 0.5 |
+
+### 扩展方式
+
+新增维度只需两步，无需改动现有逻辑：
+
+```python
+# 1. 在 ai_service.py 中添加变换函数
+def _scale_new_dimension(trend, lag, pct):
+    factor = 1 + pct / 100.0
+    # ... 自定义变换逻辑
+    return trend, lag
+
+# 2. 在 DIMENSION_TRANSFORM 中注册
+DIMENSION_TRANSFORM['new_dimension'] = _scale_new_dimension
+```
+
+AI prompt 也会自动包含新维度，前端无需任何改动。
+
+### 向后兼容
+
+旧版字符串格式的 action（`cut_parking`、`boost_green`、`melt_red`、`optimize_lag`）通过 `_LEGACY_ACTION_MAP` 自动映射到新维度，旧代码和数据不受影响。
+
+---
 
 ---
 
