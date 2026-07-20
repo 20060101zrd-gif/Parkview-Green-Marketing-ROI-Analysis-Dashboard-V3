@@ -115,7 +115,7 @@ def api_ai_config():
 
 @app.route('/api/insight')
 def api_insight():
-    analysis_type = request.args.get('type', 'page_overview')  # page_overview | module_focus
+    analysis_type = request.args.get('type', 'diagnostic')  # diagnostic | page_overview | module_focus
     page = request.args.get('page', 'summary')
     module_name = request.args.get('module', '')
 
@@ -134,7 +134,7 @@ def api_insight():
         )
         return jsonify(result)
 
-    # Legacy fallback
+    # Diagnostic: structured recommendations + alerts (legacy format, default)
     anomalies = detect_anomalies(df_c, df_s)
     return jsonify(generate_insight(kpis, structure, cohorts, lag_data, anomalies))
 
@@ -460,4 +460,4 @@ if __name__ == '__main__':
     print(f"  Opening: {url}")
     print(f"{'='*60}\n")
     webbrowser.open(url)
-    app.run(debug=False, host='0.0.0.0', port=8050)
+    app.run(debug=False, host='0.0.0.0', port=8050, threaded=True)
