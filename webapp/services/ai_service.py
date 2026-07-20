@@ -314,8 +314,21 @@ def generate_analysis(analysis_type, kpis=None, structure=None, cohorts=None, la
             'trend': '趋势滞后分析', 'cohort': '客群价值诊断', 'insight': '智能诊室'
         }
         page_label = page_map.get(page, '战情摘要')
+
+        # Per-page focus instructions so DeepSeek generates differentiated analysis
+        page_focus = {
+            'summary': '全局概览：综合所有维度的核心结论，关注整体 ROI、客群结构、关键告警。',
+            'kpi': 'KPI 诊断：逐项分析 ROI、核销率、客单价、会员贡献、发券渗透率等指标，判断每项的健康度。',
+            'structure': '券种结构分析：聚焦停车券占比和券种分布，分析结构性错配和成本效率。',
+            'trend': '趋势滞后分析：聚焦发券-消费的滞后关系、相关系数强度、最佳发券窗口。',
+            'cohort': '客群价值诊断：聚焦 GREEN/GOLD/RED/GRAY 四象限客群，分析各组特征和策略方向。',
+            'insight': '综合诊室：汇总告警、异常检测结果和优化建议，给出最优先行动项。',
+        }
+        focus_instruction = page_focus.get(page, page_focus['summary'])
+
         system_prompt = (
             "你是侨福芳草地购物中心的商业智能分析师。请基于当前页面数据输出结构化整体洞察。"
+            f"【重要】当前页面是「{page_label}」，分析重点：{focus_instruction}"
             "严格返回 JSON（不要 markdown 代码块）："
             '{"summary": "1-2句核心结论", "findings": ["关键发现1", "关键发现2", "关键发现3"], "recommendation": "1条最优先建议"}'
             "纯中文，不要 emoji，不要 ** 加粗。"
