@@ -34,6 +34,15 @@ jobs:
       - name: Run regression tests
         run: python tests/test_five_fixes.py
 
+      - name: Run fix tests (trend/simulation/page-analysis)
+        run: python tests/test_fix_three_issues.py
+
+      - name: Run dimension simulation tests
+        run: python tests/test_dimension_simulation.py
+
+      - name: Run global integration tests
+        run: python tests/test_global_integration.py
+
       - name: Run hover analysis tests
         run: python tests/test_hover_analysis.py
 
@@ -51,9 +60,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Build Streamlit image
-        run: docker build -t parkview-roi-streamlit -f Dockerfile .
 
       - name: Build Flask webapp image
         run: docker build -t parkview-roi-webapp -f Dockerfile.webapp .

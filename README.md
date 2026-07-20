@@ -294,25 +294,20 @@ DEEPSEEK_API_KEY = "sk-xxxxxxxx"
 
 ```
 Parkview_Green_Marketing_ROI_Analysis_Dashboard/
-├── agent_scheduler.py        # 定时巡检脚本
 ├── Dockerfile.webapp         # Flask 容器
 ├── docker-compose.yml        # 服务编排
 ├── render.yaml               # Render.com 部署
 ├── requirements.txt
 │
 ├── config/                   # YAML 配置（所有业务规则）
-├── semantic_layer/           # 统一 KPI 计算
-├── ai_engine/                # AI & ML
-├── data_engine/              # 数据加载
 ├── webapp/                   # Flask Web 应用
 │   ├── app.py                # Flask 入口
 │   ├── services/             # 后端 API 服务
 │   ├── static/               # 前端静态资源（CSS/JS）
 │   └── templates/            # HTML 模板
 ├── tests/                    # 测试
-├── screenshots/              # 产品截图 (17 张)
+├── screenshots/              # 产品截图
 ├── data/                     # CSV 数据文件
-├── assets/                   # Logo 等静态资源
 └── .github/workflows/ci.yml  # GitHub Actions CI
 ```
 
@@ -327,10 +322,13 @@ Parkview_Green_Marketing_ROI_Analysis_Dashboard/
 1. pip install 依赖 (含 pytest)
 2. python tests/run_tests.py
 3. python tests/test_five_fixes.py
-4. python tests/test_hover_analysis.py
-5. python tests/test_lag_chart.py
-6. pytest tests/test_scheduler.py -v
-7. docker build Dockerfile.webapp
+4. python tests/test_fix_three_issues.py
+5. python tests/test_hover_analysis.py
+6. python tests/test_lag_chart.py
+7. python tests/test_dimension_simulation.py
+8. python tests/test_global_integration.py
+9. pytest tests/test_scheduler.py -v
+10. docker build Dockerfile.webapp
 ```
 
 ---
@@ -362,38 +360,21 @@ Parkview_Green_Marketing_ROI_Analysis_Dashboard/
 
 ## 预测运行逻辑
 
-### 完整链路
+采纳建议后的趋势预测分四步走，AI 和本地规则各司其职：
 
-```
-DeepSeek 拿到 KPI 数据（ROI、核销率、客群、券种…）
-        │
-        ▼  自由分析，判断哪里有问题
-        │  match 到预定义维度（coupon_volume / sales_efficiency / lag_correlation）
-        │  输出 effect（选中哪个维度），不生成 pct 数值
-        │
-        ▼
-本地规则引擎接管数值
-        │  effect + 预定义规则 → pct（如停车券占比 > 70% → coupon_volume: -60）
-        │  规则定义在 _build_template_insight 中，可手动增删
-        │
-        ▼
-DIMENSION_TRANSFORM 做确定性数学变换
-        │  拿 effect + pct，对趋势/滞后数据做纯数学运算
-        │  同输入永远同输出，图表线不会每次刷新都不同
-        │
-        ▼
-DeepSeek 生成文字解读（ai_analysis）
-        │  基于变换后的数值，用自然语言描述趋势变化和业务含义
-        │  文字分析全权交给 AI，数值绝不交给 AI
-```
+**第一步 · DeepSeek 自由分析**：拿到当前 KPI 数据（ROI、核销率、客群、券种分布），自由判断哪里有问题，然后将问题 **match 到三个预定义维度**（`coupon_volume` / `sales_efficiency` / `lag_correlation`）中的某一个，输出 `effect`（选中哪个维度）。**这一步不生成任何数值。**
 
-### 为什么不给 AI 直接生成数值
+**第二步 · 本地规则引擎接管数值**：`effect` + 预定义规则 → `pct`（调整幅度）。例如停车券占比 > 70% 触发 `coupon_volume: -60`。规则定义在 `_build_template_insight` 中，手动增删即可，无需动 AI prompt。
 
-LLM 是概率模型，不是计算器。即使 `temperature=0` + `seed=42`，同样的输入每次调用数值结果仍可能不同。趋势线和 KPI 卡片的模拟值必须确定、可复现，所以数值走本地规则，文字分析走 AI。
+**第三步 · DIMENSION_TRANSFORM 确定性变换**：拿 `effect + pct` 对趋势和滞后数据做纯数学运算（乘法/加法）。同输入永远同输出，图表线不会每次刷新都不同。
+
+**第四步 · DeepSeek 生成文字解读**：基于变换后的数值，用自然语言描述趋势变化和业务含义。**文字分析全权交给 AI，数值绝不交给 AI。**
+
+为什么不给 AI 直接生成数值？LLM 是概率模型，不是计算器。即使 `temperature=0`，同样的输入每次调用数值仍可能不同，趋势线和 KPI 卡片需要绝对确定、可复现。
 
 ### 三个对称维度（双向，可手动扩展）
 
-每个维度正 `pct` = 增强，负 `pct` = 削减。新增维度只需在 `DIMENSION_TRANSFORM` 中注册一个变换函数，AI prompt 自动包含，前端无需改动。
+每个维度正 `pct` = 增强，负 `pct` = 削减。新增维度只需在 `DIMENSION_TRANSFORM` 中注册一个变换函数。
 
 | 维度 | 变换逻辑 | +30% | -50% |
 |:---|:---|:---|:---|
