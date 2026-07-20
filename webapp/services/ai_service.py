@@ -28,20 +28,31 @@ def _get_deepseek_key():
     if key:
         print(f'[DeepSeek] Key loaded from env ({len(key)} chars)')
         return key
+
+    secrets_path = os.path.join(BASE_DIR, '.streamlit', 'secrets.toml')
+    if not os.path.exists(secrets_path):
+        print('[DeepSeek] No secrets.toml found, using local engine')
+        return ''
+
+    # Python 3.11+ has tomllib in stdlib; fall back to tomli for older versions
     try:
-        import tomli
-        secrets_path = os.path.join(BASE_DIR, '.streamlit', 'secrets.toml')
-        print(f'[DeepSeek] Checking secrets: {secrets_path} (exists={os.path.exists(secrets_path)})')
-        if os.path.exists(secrets_path):
+        import tomllib
+        with open(secrets_path, 'rb') as f:
+            key = tomllib.load(f).get('DEEPSEEK_API_KEY', '')
+    except ImportError:
+        try:
+            import tomli
             with open(secrets_path, 'rb') as f:
                 key = tomli.load(f).get('DEEPSEEK_API_KEY', '')
-                if key:
-                    print(f'[DeepSeek] Key loaded from secrets.toml ({len(key)} chars)')
-                return key
-    except Exception as e:
-        print(f'[DeepSeek] Load error: {e}')
-    print('[DeepSeek] No API key found, using local engine')
-    return ''
+        except Exception as e:
+            print(f'[DeepSeek] TOML parse error: {e}')
+            return ''
+
+    if key:
+        print(f'[DeepSeek] Key loaded from secrets.toml ({len(key)} chars)')
+    else:
+        print('[DeepSeek] No API key found in secrets.toml, using local engine')
+    return key or ''
 
 
 def generate_insight(kpis, structure, cohorts, lag_data, anomalies):
@@ -319,44 +330,159 @@ def generate_analysis(analysis_type, kpis=None, structure=None, cohorts=None, la
                 return data
             except Exception:
                 pass
-        # Local fallback for page overview — derive findings from real data
+        # Local fallback for page overview — per-page differentiated findings
         findings = []
-        recommendation = '可点击各模块标题查看针对性分析'
+        recommendation = ''
         summary = f'当前{page_label}页面已加载数据。'
 
-        if kpis:
-            roi = kpis.get('roi', 0)
-            conversion = kpis.get('conversion_rate', 0)
-            summary = f'营销投资回报率 {roi}%，核销率 {conversion}%，整体呈{"正向" if roi > 30 else "承压"}状态。'
+        roi = kpis.get('roi', 0) if kpis else 0
+        conversion = kpis.get('conversion_rate', 0) if kpis else 0
+        aov = kpis.get('aov', 0) if kpis else 0
+        member_contribution = kpis.get('member_contribution', 0) if kpis else 0
+        total_sales = kpis.get('total_sales', 0) if kpis else 0
+        total_issued = kpis.get('total_issued', 0) if kpis else 0
+        coupon_leverage = kpis.get('coupon_leverage', 0) if kpis else 0
+
+        parking_share = 0
+        parking_name = '停车券'
+        if structure:
+            for s in structure:
+                if '停车' in s.get('name', ''):
+                    parking_share = s.get('pct', 0)
+                    parking_name = s.get('name', '停车券')
+                    break
+
+        if cohorts:
+            tags = {'GREEN': 0, 'GOLD': 0, 'RED': 0, 'GRAY': 0}
+            for c in cohorts:
+                tags[c.get('tag', 'GRAY')] = tags.get(c.get('tag', 'GRAY'), 0) + 1
+        else:
+            tags = {'GREEN': 0, 'GOLD': 0, 'RED': 0, 'GRAY': 0}
+
+        # ================================================================
+        # Per-page differentiated analysis
+        # ================================================================
+        if page == 'summary':
+            # 战情摘要：全局 KPI 概览 + 客群结构 + 告警
+            summary = f'全局概览：ROI {roi}%，核销率 {conversion}%，整体呈{"正向" if roi > 30 else "承压"}状态。'
             if roi < 10:
                 findings.append(f'ROI 仅 {roi}%，低于 10% 安全线，需立即审查营销效果')
             elif roi < 30:
                 findings.append(f'ROI 为 {roi}%，低于 30% 警戒线，利润空间承压')
             else:
                 findings.append(f'ROI 达到 {roi}%，整体回报健康')
-            if conversion < 1.0:
-                findings.append(f'核销转化率仅 {conversion}%，券激励设计需要重新评估')
-
-        if structure:
-            parking = next((s for s in structure if '停车' in s.get('name', '')), None)
-            if parking and parking.get('pct', 0) > 70:
-                findings.append(f'停车券占比 {parking["pct"]}%，结构单一，存在资源错配')
-                recommendation = '建议削减停车券预算，转移至高 ROI 客群专属体验券'
-
-        if cohorts:
-            tags = {'GREEN': 0, 'GOLD': 0, 'RED': 0, 'GRAY': 0}
-            for c in cohorts: tags[c.get('tag', 'GRAY')] = tags.get(c.get('tag', 'GRAY'), 0) + 1
+            if parking_share > 70:
+                findings.append(f'停车券占发券总量 {parking_share}%，结构单一，存在资源错配')
             if tags['RED'] > 0:
-                findings.append(f'识别出 {tags["RED"]} 个 RED 耗损型客群，建议实施发券熔断')
+                findings.append(f'{tags["RED"]} 个 RED 耗损客群 + {tags["GREEN"]} 个 GREEN 高转化客群，整体客群健康度需关注')
+            if conversion < 1.0:
+                findings.append(f'核销率 {conversion}%，券激励设计需重新评估')
+            recommendation = '建议从客群诊断和投入产出结构入手，优先解决停车券占比过高问题'
+
+        elif page == 'kpi':
+            # KPI 总览：逐项指标分析
+            summary = f'KPI 诊断：ROI {roi}%，客单价 CNY {aov:,.0f}，会员贡献 {member_contribution}%。'
+            if roi < 10:
+                findings.append(f'营销 ROI 仅 {roi}% — 投入产出严重失衡，建议立即审计低效券种')
+            elif roi < 30:
+                findings.append(f'ROI {roi}% 处于警戒区间，需持续监控')
+            else:
+                findings.append(f'ROI {roi}% 处于健康区间')
+            if conversion < 1.0:
+                findings.append(f'核销转化率 {conversion}% — 券→消费链路存在堵点')
+            else:
+                findings.append(f'核销率 {conversion}% 正常，券激励方向基本正确')
+            if coupon_leverage < 0.05:
+                findings.append(f'发券动销渗透率仅 {coupon_leverage}% — 营销杠杆效应弱')
+            if member_contribution < 50:
+                findings.append(f'会员贡献 {member_contribution}%，会员运营存在缺口')
+            recommendation = '建议重点提升核销转化率和发券动销渗透率两个指标'
+
+        elif page == 'structure':
+            # 投入产出结构：券种结构 + 成本分布
+            summary = f'券种结构分析：共 {len(structure) if structure else 0} 种券，停车券占比 {parking_share}%。'
+            if parking_share > 70:
+                findings.append(f'停车券占比高达 {parking_share}%，核销率极低，是结构性错配的核心来源')
+                recommendation = '建议削减停车券预算 50-60%，转移至高 ROI 体验券种'
+            elif parking_share > 40:
+                findings.append(f'停车券占比 {parking_share}%，存在优化空间')
+                recommendation = '建议逐步降低停车券比例，增发高转化业态专属券'
+            else:
+                findings.append(f'停车券占比 {parking_share}%，券种结构相对合理')
+                recommendation = '保持当前券种配比，关注各券种的核销效率差异'
+            if structure:
+                top_coupons = sorted(structure, key=lambda x: x.get('count', 0), reverse=True)[:3]
+                findings.append(f'Top 3 券种: ' + ', '.join(f"{s['name']}({s.get('pct',0)}%)" for s in top_coupons))
+            if total_sales > 0 and total_issued > 0:
+                findings.append(f'单券产出约 CNY {total_sales / max(total_issued, 1):.0f}，可作为券种优化的基准线')
+
+        elif page == 'trend':
+            # 趋势滞后分析：发券-消费滞后关系 + 趋势方向
+            best_lag = max(lag_data, key=lambda x: x.get('r', 0)) if lag_data else {}
+            best_lag_day = best_lag.get('lag', 0)
+            best_lag_r = best_lag.get('r', 0)
+            summary = f'滞后分析：最佳发券窗口为消费前 {best_lag_day} 天（r={best_lag_r:.2f}）。'
+            if best_lag_r >= 0.5:
+                findings.append(f'发券-消费滞后相关性较强（r={best_lag_r:.2f}），建议在消费前 {best_lag_day} 天集中投放')
+            elif best_lag_r >= 0.3:
+                findings.append(f'滞后相关性中等（r={best_lag_r:.2f}），发券时间窗口有一定参考价值')
+            else:
+                findings.append(f'滞后相关性偏弱（r={best_lag_r:.2f}），发券时间点对消费拉动作用有限')
+            if lag_data:
+                neg_lags = [l for l in lag_data if (l.get('r', 0) or 0) < 0]
+                if neg_lags:
+                    findings.append(f'{len(neg_lags)} 个滞后天数呈负相关，当天发券反而抑制消费')
+            findings.append(f'建议将发券节奏调整到消费前 {best_lag_day} 天的窗口期')
+            recommendation = f'核心建议：将发券时间窗口前移至消费前 {best_lag_day} 天'
+
+        elif page == 'cohort':
+            # 客群价值诊断：四象限客群分析
+            total_cohorts = len(cohorts) if cohorts else 0
+            summary = f'客群诊断：共 {total_cohorts} 个客群组，GREEN {tags["GREEN"]} / GOLD {tags["GOLD"]} / RED {tags["RED"]} / GRAY {tags["GRAY"]}。'
             if tags['GREEN'] > 0:
-                findings.append(f'识别出 {tags["GREEN"]} 个 GREEN 高转化客群，建议加大投放')
+                findings.append(f'{tags["GREEN"]} 个 GREEN 高转化客群 → 应加大精准投放，预算倾斜')
+            else:
+                findings.append('暂无 GREEN 高转化客群，需培育高潜力人群')
+            if tags['GOLD'] > 0:
+                findings.append(f'{tags["GOLD"]} 个 GOLD 自然高价值客群 → 适合体验式营销，避免折扣侵蚀毛利')
+            if tags['RED'] > 0:
+                findings.append(f'{tags["RED"]} 个 RED 耗损型客群 → 建议实施发券熔断，限制领券数量')
+            else:
+                findings.append('暂无 RED 耗损型客群，客群结构整体健康')
+            if tags['RED'] > tags['GREEN']:
+                recommendation = 'RED 客群多于 GREEN 客群，建议优先清理耗损客群，再逐步培育高转化人群'
+            else:
+                recommendation = '客群结构相对健康，建议持续监控 RED 客群的转化趋势变化'
 
-        if lag_data:
-            best = max(lag_data, key=lambda x: x.get('r', 0))
-            findings.append(f'最佳发券窗口为消费前 {best.get("lag", 0)} 天（r={best.get("r", 0):.2f}）')
+        elif page == 'insight':
+            # 智能诊室：综合诊断结论
+            summary = f'综合诊断：ROI {roi}%，核销率 {conversion}%，停车券占比 {parking_share}%。'
+            # Aggregate alerts from template insight
+            if kpis and (structure or cohorts):
+                template = _build_template_insight(kpis, structure or [], cohorts or [], lag_data or [])
+                alert_msgs = [a['message'] for a in template.get('alerts', [])]
+                recs = template.get('recommendations', [])
+                if alert_msgs:
+                    findings = alert_msgs[:3]
+                else:
+                    findings = ['当前数据范围内未检测到关键告警，各项指标处于正常区间']
+                if recs:
+                    first_rec = recs[0]
+                    rec_text = first_rec.get('text', first_rec.get('action', '')) if isinstance(first_rec, dict) else str(first_rec)
+                    recommendation = rec_text
+                else:
+                    recommendation = '持续监控各客群表现，关注新出现的转化模式'
+            else:
+                findings = ['暂无足够数据生成综合诊断，请先加载数据']
+                recommendation = '请确保已上传发券记录和销售流水 CSV 文件'
 
+        # ================================================================
+        # Fallback if no findings generated
+        # ================================================================
         if not findings:
             findings = ['数据已加载完成，可进入各模块查看详细分析']
+        if not recommendation:
+            recommendation = '可点击各模块标题查看针对性分析'
 
         return {
             'summary': summary,
@@ -384,10 +510,100 @@ def generate_analysis(analysis_type, kpis=None, structure=None, cohorts=None, la
                 return data
             except Exception:
                 pass
-        # Local fallback for module focus
+        # Local fallback for module focus — derive analysis from actual data
+        # Uses broad keyword matching on module name, falling back to data-driven heuristics
+        mod_lower = mod.lower()
+        insight_text = ''
+        finding_text = ''
+
+        roi = kpis.get('roi', 0) if kpis else 0
+        conversion = kpis.get('conversion_rate', 0) if kpis else 0
+        aov = kpis.get('aov', 0) if kpis else 0
+        member = kpis.get('member_contribution', 0) if kpis else 0
+        total_sales = kpis.get('total_sales', 0) if kpis else 0
+        total_issued = kpis.get('total_issued', 0) if kpis else 0
+
+        parking_share = 0
+        if structure:
+            for s in structure:
+                if '停车' in s.get('name', ''):
+                    parking_share = s.get('pct', 0)
+                    break
+
+        tags = {'GREEN': 0, 'GOLD': 0, 'RED': 0, 'GRAY': 0}
+        if cohorts:
+            for c in cohorts:
+                tags[c.get('tag', 'GRAY')] = tags.get(c.get('tag', 'GRAY'), 0) + 1
+
+        best_lag = max(lag_data, key=lambda x: x.get('r', 0)) if lag_data else {}
+        best_lag_day = best_lag.get('lag', 0)
+        best_lag_r = best_lag.get('r', 0)
+
+        # Broad semantic matching — prioritize specific module names, fall back to keyword groups
+        if any(kw in mod for kw in ['资源错配', '资源', '停车券', '券种', '结构']):
+            insight_text = f'「{mod}」停车券占比 {parking_share}%，共 {len(structure) if structure else 0} 种券。'
+            if parking_share > 70:
+                finding_text = f'停车券占 {parking_share}%，核销率极低，是 ROI 低迷的主因。建议削减 50-60%，转移预算至高转化体验券。'
+            elif parking_share > 40:
+                finding_text = f'停车券占 {parking_share}%，存在优化空间，建议逐步降低比例。'
+            else:
+                finding_text = f'停车券占 {parking_share}%，券种结构相对合理。'
+
+        elif any(kw in mod for kw in ['核心指挥', '指挥看板', '指挥', '看板', '核心']):
+            insight_text = f'「{mod}」全局 ROI {roi}%，核销率 {conversion}%，客单价 CNY {aov:,.0f}。'
+            if roi < 10:
+                finding_text = f'ROI 仅 {roi}%，低于安全线。停车券占比 {parking_share}% 是主要拖累因素。'
+            elif roi < 30:
+                finding_text = f'ROI {roi}% 处于警戒区间，需关注停车券占比和核销率变化。'
+            else:
+                finding_text = f'ROI {roi}% 健康，核心指标正常。'
+
+        elif any(kw in mod for kw in ['KPI', 'kpi', 'ROI', 'roi', '指标', '核销', '客单价', '会员贡献', '发券']):
+            insight_text = f'「{mod}」ROI {roi}%，核销率 {conversion}%，客单价 CNY {aov:,.0f}，会员贡献 {member}%。'
+            if roi < 10:
+                finding_text = f'ROI {roi}% 低于 10% 安全线，营销投入产出严重失衡，建议立即审计低效券种。'
+            elif roi < 30:
+                finding_text = f'ROI {roi}% 处于警戒区间，利润空间承压。'
+            else:
+                finding_text = f'ROI {roi}% 处于健康区间。核销率 {conversion}%，客单价 CNY {aov:,.0f}。'
+
+        elif any(kw in mod for kw in ['趋势', 'trend', '滞后', '窗口', 'lag']):
+            insight_text = f'「{mod}」最佳发券窗口为消费前 {best_lag_day} 天（r={best_lag_r:.2f}）。'
+            if best_lag_r >= 0.5:
+                finding_text = f'滞后相关性较强（r={best_lag_r:.2f}），建议在消费前 {best_lag_day} 天集中投放。'
+            elif best_lag_r >= 0.3:
+                finding_text = f'滞后相关性中等（r={best_lag_r:.2f}），发券时间窗口有参考价值。'
+            else:
+                finding_text = f'滞后相关性偏弱（r={best_lag_r:.2f}），发券时点对消费拉动作用有限。'
+
+        elif any(kw in mod for kw in ['客群', 'cohort', 'GREEN', 'GOLD', 'RED', 'GRAY', '诊断', '价值']):
+            insight_text = f'「{mod}」共 {len(cohorts) if cohorts else 0} 组客群，GREEN {tags["GREEN"]}/GOLD {tags["GOLD"]}/RED {tags["RED"]}/GRAY {tags["GRAY"]}。'
+            if tags['RED'] > 0:
+                finding_text = f'{tags["RED"]} 组 RED 耗损客群需实施发券熔断；{tags["GREEN"]} 组 GREEN 客群应加大投放。'
+            elif tags['GREEN'] > 0:
+                finding_text = f'{tags["GREEN"]} 组 GREEN 高转化客群，建议预算倾斜。'
+            else:
+                finding_text = '客群结构正常，无极端异常分组。'
+
+        elif any(kw in mod for kw in ['销售', 'sales', '业绩', '营收', '成本']):
+            insight_text = f'「{mod}」总销售额 CNY {total_sales:,.0f}，发券 {total_issued:,} 张。'
+            finding_text = f'单券产出约 CNY {total_sales / max(total_issued, 1):.0f}，可作为券种优化基准线。'
+
+        else:
+            # Ultimate fallback: use the most relevant data available
+            insight_text = f'「{mod}」当前 ROI {roi}%，核销率 {conversion}%，客单价 CNY {aov:,.0f}。'
+            if parking_share > 70:
+                finding_text = f'停车券占比 {parking_share}% 是核心风险点，建议削减至 30% 以下。'
+            elif roi < 10:
+                finding_text = f'ROI {roi}% 低于安全线，需全面审查营销策略。'
+            elif tags['RED'] > 0:
+                finding_text = f'{tags["RED"]} 组 RED 耗损客群需要重点关注。'
+            else:
+                finding_text = f'核心指标处于正常区间。停车券占比 {parking_share}%，客群 GREEN {tags["GREEN"]}/RED {tags["RED"]} 组。'
+
         return {
-            'insight': f'「{mod}」模块数据已加载，可在此查看详细指标。建议结合其他模块进行交叉分析。',
-            'finding': '数据正常，未检测到异常',
+            'insight': insight_text,
+            'finding': finding_text,
             'generated_by': '本地规则引擎',
         }
 
@@ -590,9 +806,21 @@ _TREND_SIMULATION_CACHE = {}
 
 def predict_trend_simulation(before_trend, before_lag, actions):
     """
-    Prompt 1: AI-powered trend + lag prediction after simulation.
-    Returns { trend, lag, best_lag_day, predicted_by }.
-    Falls back to local rules if DeepSeek is unavailable.
+    Trend + lag prediction after simulation.
+    
+    Architecture (Fix: AI never generates numeric values):
+    - DeepSeek LLM: only generates a natural-language analysis (ai_analysis) of the
+      expected trend change — NOT numeric arrays.
+    - Local DIMENSION_TRANSFORM: always computes the actual trend/lag numbers.
+      This guarantees deterministic output: same input → same output every time.
+    
+    Why not let AI generate numbers:
+      LLMs are probabilistic — even with temperature=0 + seed=42, numeric outputs
+      drift between calls. For trend data that feeds charts and KPI cards,
+      determinism is mandatory. AI's strength is narrative interpretation,
+      not arithmetic precision.
+    
+    Returns { trend, lag, best_lag_day, predicted_by, ai_analysis (optional) }.
     """
     import copy
     import hashlib
@@ -614,79 +842,7 @@ def predict_trend_simulation(before_trend, before_lag, actions):
     if cache_key in _TREND_SIMULATION_CACHE:
         return copy.deepcopy(_TREND_SIMULATION_CACHE[cache_key])
 
-    api_key = _get_deepseek_key()
-    if api_key:
-        try:
-            from openai import OpenAI
-            client = OpenAI(api_key=api_key.strip(), base_url="https://api.deepseek.com/v1")
-
-            trend_summary = []
-            if before_trend and before_trend.get('labels'):
-                for i in range(min(5, len(before_trend['labels']))):
-                    trend_summary.append(
-                        f"  {before_trend['labels'][i]}: coupons={before_trend['coupon'][i]}, sales={before_trend['sales'][i]}"
-                    )
-            lag_summary = []
-            if before_lag:
-                for l in sorted(before_lag, key=lambda x: x.get('lag', 0))[:5]:
-                    lag_summary.append(f"  lag {l.get('lag', 0)}d: r={l.get('r', 0)}")
-
-            actions_str = ', '.join(actions) if actions else 'none'
-            prompt = (
-                "你是营销数据分析师。以下是原始趋势和滞后数据，以及采纳的优化建议。"
-                "请预测优化后的趋势和滞后数据，严格返回 JSON（不要 markdown 代码块）：\n\n"
-                f"优化建议：{actions_str}\n\n"
-                f"原始趋势（部分）：\n" + '\n'.join(trend_summary) + f"\n... (共 {len(before_trend.get('labels', []))} 个时间点)\n\n"
-                f"原始滞后分析（部分）：\n" + '\n'.join(lag_summary) + f"\n... (共 {len(before_lag) if before_lag else 0} 个滞后天数)\n\n"
-                "返回格式：\n"
-                '{"trend": [{"date": "2024-01-07", "coupons": 123, "sales": 45600}, ...],'
-                '"lag": [{"days": 0, "r": -0.30}, ...], "best_lag_day": 3}\n\n'
-                "约束：coupons 必须是整数；sales 必须是正数；r 在 -1 到 1 之间；"
-                "trend 数组长度必须等于原始数据长度；lag 数组长度必须等于原始数据长度。"
-            )
-
-            response = client.chat.completions.create(
-                model="deepseek-chat",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0, max_tokens=1500, timeout=30,
-                seed=42  # 固定随机种子，进一步保证输出确定性
-            )
-            content = response.choices[0].message.content.strip()
-            if content.startswith("```"):
-                content = content.replace("```json", "").replace("```", "").strip()
-
-            result = json.loads(content)
-            # Normalize field names to match frontend expectations
-            trend_raw = result.get('trend', [])
-            lag_raw = result.get('lag', [])
-            normalized_trend = {
-                'labels': [t.get('date', '') for t in trend_raw],
-                'coupon': [max(0, int(t.get('coupons', t.get('coupon', 0)) or 0)) for t in trend_raw],
-                'sales': [max(1, int(t.get('sales', 0) or 0)) for t in trend_raw],
-                'correlation': before_trend.get('correlation', 0) if before_trend else 0,
-            }
-            normalized_lag = []
-            for l in lag_raw:
-                normalized_lag.append({
-                    'lag': int(l.get('days', l.get('lag', 0)) or 0),
-                    'r': max(-1.0, min(1.0, float(l.get('r', 0) or 0))),
-                    'strength': 'strong' if abs(l.get('r', 0) or 0) >= 0.7 else ('moderate' if abs(l.get('r', 0) or 0) >= 0.4 else 'weak'),
-                })
-            best_lag_day = int(result.get('best_lag_day', 0) or 0)
-            if not best_lag_day and normalized_lag:
-                best_lag_day = max(normalized_lag, key=lambda x: x.get('r', 0)).get('lag', 3)
-            result = {
-                'trend': normalized_trend,
-                'lag': normalized_lag,
-                'best_lag_day': best_lag_day,
-                'predicted_by': 'DeepSeek LLM',
-            }
-            _TREND_SIMULATION_CACHE[cache_key] = copy.deepcopy(result)
-            return result
-        except Exception as e:
-            print(f'[Trend Prediction] DeepSeek failed: {e}')
-
-    # === Local fallback rules (symmetric dimension architecture) ===
+    # === Step 1: Always compute numeric trend via local DIMENSION_TRANSFORM ===
     trend = copy.deepcopy(before_trend) if before_trend else {'labels': [], 'coupon': [], 'sales': [], 'correlation': 0}
     lag = copy.deepcopy(before_lag) if before_lag else []
     best_lag_day = max(lag, key=lambda x: x.get('r', 0)).get('lag', 3) if lag else 3
@@ -726,11 +882,79 @@ def predict_trend_simulation(before_trend, before_lag, actions):
         if l.get('r') is None or (isinstance(l['r'], float) and (l['r'] != l['r'])):
             l['r'] = 0
 
+    predicted_by = '本地规则引擎'
+
+    # === Step 2: DeepSeek generates narrative analysis only (NO numeric generation) ===
+    ai_analysis = None
+    api_key = _get_deepseek_key()
+    if api_key:
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=api_key.strip(), base_url="https://api.deepseek.com/v1")
+
+            # Build a compact summary of the changes for the LLM
+            actions_desc = []
+            for a in actions:
+                if isinstance(a, dict):
+                    eff = a.get('effect', '?')
+                    p = a.get('pct', 0)
+                    actions_desc.append(f"{eff} ({p:+d}%)")
+                else:
+                    actions_desc.append(str(a))
+
+            # Summarize key numeric changes (computed locally, just for context)
+            changes_summary = []
+            if before_trend and before_trend.get('coupon') and trend.get('coupon'):
+                old_total_coupon = sum(before_trend['coupon'])
+                new_total_coupon = sum(trend['coupon'])
+                if old_total_coupon > 0:
+                    chg = (new_total_coupon - old_total_coupon) / old_total_coupon * 100
+                    changes_summary.append(f"发券总量: {old_total_coupon:,} → {new_total_coupon:,} ({chg:+.1f}%)")
+            if before_trend and before_trend.get('sales') and trend.get('sales'):
+                old_total_sales = sum(before_trend['sales'])
+                new_total_sales = sum(trend['sales'])
+                if old_total_sales > 0:
+                    chg = (new_total_sales - old_total_sales) / old_total_sales * 100
+                    changes_summary.append(f"销售额: {old_total_sales:,} → {new_total_sales:,} ({chg:+.1f}%)")
+            if before_lag and lag:
+                old_best_r = max(lag, key=lambda x: x.get('r', 0) or 0).get('r', 0) if lag else 0
+                new_best_r = max(lag, key=lambda x: x.get('r', 0) or 0).get('r', 0) if lag else 0
+                changes_summary.append(f"最佳滞后相关系数: {old_best_r:.2f} → {new_best_r:.2f} (最佳窗口: {best_lag_day}天)")
+
+            system_prompt = (
+                "你是侨福芳草地购物中心的高级营销数据分析师。"
+                "请根据采纳的优化建议及其预期数值变化，生成一段简洁的趋势变化解读。"
+                "不需要生成任何数值数据（数值由系统计算），只需要做文字解读。"
+                "纯中文，不要 emoji，不要 markdown，控制在 100 字以内。"
+            )
+            user_prompt = (
+                f"采纳建议: {', '.join(actions_desc)}\n"
+                f"数值变化:\n" + '\n'.join(changes_summary) + "\n\n"
+                "请解读：这些变化意味着什么？趋势走向如何？"
+            )
+
+            response = client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.4, max_tokens=300, timeout=15,
+            )
+            ai_analysis = response.choices[0].message.content.strip()
+            predicted_by = 'DeepSeek LLM + 本地规则引擎'
+            print(f'[Trend Prediction] DeepSeek analysis generated ({len(ai_analysis)} chars)')
+        except Exception as e:
+            print(f'[Trend Prediction] DeepSeek analysis failed: {e}')
+
     result = {
         'trend': trend,
         'lag': lag,
         'best_lag_day': best_lag_day,
-        'predicted_by': '本地规则引擎',
+        'predicted_by': predicted_by,
     }
+    if ai_analysis:
+        result['ai_analysis'] = ai_analysis
+
     _TREND_SIMULATION_CACHE[cache_key] = copy.deepcopy(result)
     return result

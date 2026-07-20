@@ -215,18 +215,71 @@ def api_simulation_analysis():
         except Exception as e:
             print(f'[Sim Analysis Error] DeepSeek call failed: {type(e).__name__}: {e}')
 
-    # Local fallback
+    # Local fallback — 真实呈现每个指标的变化方向，不硬编"提升"
     print(f'[Sim Analysis] Using local rule engine (api_key present: {bool(api_key)})')
-    roi_chg = ((after.get('roi', 0) - before.get('roi', 0)) / max(abs(before.get('roi', 1)), 1)) * 100
+    def _chg(b, a):
+        b = b or 0; a = a or 0
+        if abs(b) < 1: return 0.0 if abs(a) < 1 else 100.0
+        return (a - b) / abs(b) * 100
+
+    roi_chg = _chg(before.get('roi', 0), after.get('roi', 0))
+    issued_chg = _chg(before.get('total_issued', 0), after.get('total_issued', 0))
+    conv_chg = _chg(before.get('conversion_rate', 0), after.get('conversion_rate', 0))
+    sales_chg = _chg(before.get('total_sales', 0), after.get('total_sales', 0))
+    aov_chg = _chg(before.get('aov', 0), after.get('aov', 0))
+
+    def _dir(pct):
+        if pct > 0.5: return f'上升 {pct:+.1f}%'
+        if pct < -0.5: return f'下降 {pct:+.1f}%'
+        return '基本持平'
+
+    # 整体评价：据实描述，不再套话
+    if roi_chg > 1 and sales_chg > 0:
+        overall = f'整体评价：ROI { _dir(roi_chg) }，销售额同步上升，优化方向生效。'
+    elif roi_chg > 1 and sales_chg <= 0:
+        overall = '整体评价：ROI ' + _dir(roi_chg) + '，但销售额 ' + _dir(sales_chg) + '，属「减本增效」型调整。'
+    elif roi_chg < -1:
+        overall = f'整体评价：ROI 短期 { _dir(roi_chg) }，属预期内调整（削减低效券后短期内回报占比会下降，需 1-2 个观察周期后回归）。'
+    else:
+        overall = f'整体评价：ROI {_dir(roi_chg)}，整体处于稳定区间。'
+
+    # 关键变化：每点对应一个具体指标的数值方向
+    b_issued = before.get('total_issued', 0)
+    a_issued = after.get('total_issued', 0)
+    b_conv = before.get('conversion_rate', 0)
+    a_conv = after.get('conversion_rate', 0)
+    b_sales = before.get('total_sales', 0)
+    a_sales = after.get('total_sales', 0)
+    b_aov = before.get('aov', 0)
+    a_aov = after.get('aov', 0)
+
+    findings = []
+    if abs(issued_chg) > 0.5:
+        findings.append(f'· 发券量 {_dir(issued_chg)}（{b_issued:,} → {a_issued:,} 张），结构得到精简')
+    if abs(conv_chg) > 0.5:
+        findings.append(f'· 核销率 {_dir(conv_chg)}（{b_conv:.2f}% → {a_conv:.2f}%），券有效性提升')
+    if abs(sales_chg) > 0.5:
+        findings.append(f'· 总销售额 {_dir(sales_chg)}（CNY {b_sales:,.0f} → CNY {a_sales:,.0f}）')
+    if abs(aov_chg) > 0.5:
+        findings.append(f'· 客单价 {_dir(aov_chg)}（CNY {b_aov:,.0f} → CNY {a_aov:,.0f}）')
+    if not findings:
+        findings.append('· 主要指标基本未变，建议调整建议组合或参数幅度')
+
+    # 潜在风险：根据真实变化方向推断，不预设话术
+    risks = []
+    if sales_chg < -3:
+        risks.append('· 销售额下降幅度较大，需关注是否波及日常客流')
+    if roi_chg < -5 and sales_chg <= 0:
+        risks.append('· ROI 与销售额同步下降，建议保留部分高转化券种以维持基本盘')
+    if issued_chg < -30 and abs(conv_chg) < 2:
+        risks.append('· 大幅削减发券后核销率提升有限，需复核券种设计本身')
+    if not risks:
+        risks.append('· 当前调整幅度温和，暂无显著风险点')
+
+    analysis_text = overall + '\n关键变化：\n' + '\n'.join(findings) + '\n潜在风险：\n' + '\n'.join(risks)
+
     return jsonify({
-        'analysis': (
-            f'整体评价：ROI 提升 {roi_chg:.1f}%，优化方向正确。\n'
-            '关键变化：\n'
-            '· 发券结构优化，低效停车券减少\n'
-            '· 回报率提升，资源效率改善\n'
-            '· 精准投放带动质量提升\n'
-            '潜在风险：短期客流量可能下降'
-        ),
+        'analysis': analysis_text,
         'engine': '本地规则引擎'
     })
 

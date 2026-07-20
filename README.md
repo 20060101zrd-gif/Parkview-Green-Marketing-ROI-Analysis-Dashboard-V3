@@ -113,9 +113,11 @@
 
 在 AI 诊断卡片上点击「采纳建议」后，建议会自动加入模拟参数集合。顶部模拟横幅实时显示已采纳的所有参数（带 × 可单独移除），KPI 卡片同步展示模拟值 vs 原始值对比，趋势图叠加原始曲线（实色）与模拟曲线（虚线）。
 
+进入模拟模式后，顶部智能分析面板会自动切入**模拟前后对比分析**。面板右上角的「模拟分析」按钮可切换回**页面分析**视图，方便在模拟数据与页面上下文之间来回对照。
+
 **四种 AI 分析卡片**
 
-**说明**：切换到 LLM 模式后，DeepSeek 自动生成四类诊断卡片（严重告警 / 预警提示 / 信息摘要 / 优化建议），每条建议可一键采纳进模拟参数。引擎标识「引擎：DeepSeek LLM」。
+**说明**：切换到 LLM 模式后，DeepSeek 自动生成四类诊断卡片（严重告警 / 预警提示 / 信息摘要 / 优化建议），每条建议可一键采纳进模拟参数。
 
 ![智能诊室 - LLM 四种诊断卡片](screenshots/10_insight_llm_diagnostic_cards.png)
 
@@ -218,8 +220,8 @@
 |:---|:---|:---|
 | KPI 计算 / 图表 / 告警 / 异常检测 / 聚类 | 正常 | 正常 |
 | AI 诊断报告 | 本地规则引擎生成结构化文本 | DeepSeek 大模型生成自然语言分析 |
-| AI 追问 | 不可用 | 可用，多轮对话 |
-| 模拟推演 | 不可用 | 可用 |
+| AI 追问 | 关键词匹配（基础回答） | 可用，多轮对话，全量数据上下文 |
+| 模拟推演（趋势预测 + KPI 对比） | 可用（本地规则引擎做确定性数学变换） | 可用（同上，分析文案由 DeepSeek 生成） |
 | 数据隐私 | 零外部调用，数据不出内网 | 指标摘要发送到 DeepSeek API |
 | 成本 | 免费 | ~¥0.002/次，~¥3/月 |
 
@@ -358,46 +360,48 @@ Parkview_Green_Marketing_ROI_Analysis_Dashboard/
 
 ---
 
-## 对称维度架构 (Symmetric Dimension Architecture)
+## 预测运行逻辑
 
-### 为什么不 100% 让 AI 自由输出建议
+### 完整链路
 
-模拟模式中，采纳建议后系统需要**确定性地**计算优化后的趋势数值。如果让 DeepSeek LLM 直接生成数值（发券量、销售额、滞后系数），即使设置 `temperature=0` 和 `seed=42`，LLM 仍会引入不可控的数值波动——同样的建议每次输出不同。
-
-因此采用**分层架构**：
-- **AI 层**：DeepSeek 自由生成建议的**语义描述**（`text`）+ 选择**变换维度**（`effect`）+ 设置**变换幅度**（`pct`）
-- **规则层**：本地规则引擎根据 `effect` 和 `pct` 执行**确定性数学变换**（乘法/加法），保证结果可复现
-
-### 三个对称维度
-
-每个维度是**双向的**：正 `pct` = 增强，负 `pct` = 削减。
-
-| 维度 | 变换逻辑 | +30% 含义 | -50% 含义 |
-|:---|:---|:---|:---|
-| `coupon_volume` | `value × (1 + pct/100)` | 发券量提升 30% | 发券量削减 50% |
-| `sales_efficiency` | `value × (1 + pct/100)` | 销售额/转化效率提升 30% | 销售额下降 50% |
-| `lag_correlation` | `r + pct/100`（加性，钳制在 [-1,1]） | 滞后相关性增强 0.3 | 滞后相关性减弱 0.5 |
-
-### 扩展方式
-
-新增维度只需两步，无需改动现有逻辑：
-
-```python
-# 1. 在 ai_service.py 中添加变换函数
-def _scale_new_dimension(trend, lag, pct):
-    factor = 1 + pct / 100.0
-    # ... 自定义变换逻辑
-    return trend, lag
-
-# 2. 在 DIMENSION_TRANSFORM 中注册
-DIMENSION_TRANSFORM['new_dimension'] = _scale_new_dimension
+```
+DeepSeek 拿到 KPI 数据（ROI、核销率、客群、券种…）
+        │
+        ▼  自由分析，判断哪里有问题
+        │  match 到预定义维度（coupon_volume / sales_efficiency / lag_correlation）
+        │  输出 effect（选中哪个维度），不生成 pct 数值
+        │
+        ▼
+本地规则引擎接管数值
+        │  effect + 预定义规则 → pct（如停车券占比 > 70% → coupon_volume: -60）
+        │  规则定义在 _build_template_insight 中，可手动增删
+        │
+        ▼
+DIMENSION_TRANSFORM 做确定性数学变换
+        │  拿 effect + pct，对趋势/滞后数据做纯数学运算
+        │  同输入永远同输出，图表线不会每次刷新都不同
+        │
+        ▼
+DeepSeek 生成文字解读（ai_analysis）
+        │  基于变换后的数值，用自然语言描述趋势变化和业务含义
+        │  文字分析全权交给 AI，数值绝不交给 AI
 ```
 
-AI prompt 也会自动包含新维度，前端无需任何改动。
+### 为什么不给 AI 直接生成数值
 
-### 向后兼容
+LLM 是概率模型，不是计算器。即使 `temperature=0` + `seed=42`，同样的输入每次调用数值结果仍可能不同。趋势线和 KPI 卡片的模拟值必须确定、可复现，所以数值走本地规则，文字分析走 AI。
 
-旧版字符串格式的 action（`cut_parking`、`boost_green`、`melt_red`、`optimize_lag`）通过 `_LEGACY_ACTION_MAP` 自动映射到新维度，旧代码和数据不受影响。
+### 三个对称维度（双向，可手动扩展）
+
+每个维度正 `pct` = 增强，负 `pct` = 削减。新增维度只需在 `DIMENSION_TRANSFORM` 中注册一个变换函数，AI prompt 自动包含，前端无需改动。
+
+| 维度 | 变换逻辑 | +30% | -50% |
+|:---|:---|:---|:---|
+| `coupon_volume` | `value × (1 + pct/100)` | 发券量 +30% | 发券量 -50% |
+| `sales_efficiency` | `value × (1 + pct/100)` | 销售额/转化 +30% | 销售额 -50% |
+| `lag_correlation` | `r + pct/100`（钳制 [-1,1]） | 相关性 +0.3 | 相关性 -0.5 |
+
+旧版字符串 action（`cut_parking`、`boost_green` 等）通过 `_LEGACY_ACTION_MAP` 自动映射，向后兼容。
 
 ---
 

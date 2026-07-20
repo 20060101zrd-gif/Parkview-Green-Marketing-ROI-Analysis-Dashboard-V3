@@ -121,9 +121,11 @@ function renderAll(data) {
   updateSmartAnalysisPanel();
 }
 
+
 // ===== R4: Smart Analysis Panel (always-on, renamed, page-aware) =====
 var aiPanelFocus = null;     // R5: hover-set focus topic
 var aiPanelLocked = false;   // R5: lock hover analysis (true = fully frozen)
+var aiPanelForcePage = false; // Force page-level analysis even in simulation mode
 var aiPanelRestoreTimer = null;
 var aiPanelCollapsed = false;
 var aiPanelLastContent = ''; // R5: cache content when locked
@@ -176,12 +178,13 @@ function updateSmartAnalysisPanel(forceRebuild) {
 
   // Issue 10: Priority: hover module > simulation default > page default
   var titleText, titleExtraStyle = '';
+  var isPageView = !aiPanelFocus && (!simulationMode || aiPanelForcePage);
   if (aiPanelFocus) {
     // Module-level hover: highlighted title (works in both sim and non-sim mode)
     var simTag = simulationMode ? '的模拟分析' : '';
     titleText = '智能分析 · 针对「' + aiPanelFocus + '」' + simTag;
     titleExtraStyle = 'background:#dbeafe;padding:2px 8px;border-radius:4px;';
-  } else if (simulationMode) {
+  } else if (simulationMode && !aiPanelForcePage) {
     titleText = '智能分析 · 模拟前后对比';
   } else {
     // Page-level default
@@ -195,10 +198,21 @@ function updateSmartAnalysisPanel(forceRebuild) {
     : 'font-size:11px;padding:2px 10px;margin-right:4px;background:transparent;color:#1e40af;border:1px solid #93c5fd;border-radius:4px;cursor:pointer;';
   lockBtnHtml = '<button id="ai-panel-lock-btn" style="' + lockStyle + '">' + (aiPanelLocked ? '解锁' : '锁定') + '</button>';
 
+  // Simulation-only toggle: "页面分析" ↔ "模拟分析"
+  // Only visible in simulation mode, sits next to lock button
+  var simToggleBtnHtml = '';
+  if (simulationMode) {
+    var simToggleStyle = aiPanelForcePage
+      ? 'font-size:11px;padding:2px 10px;margin-right:4px;background:#1e40af;color:#fff;border:1px solid #1e40af;border-radius:4px;font-weight:600;cursor:pointer;'
+      : 'font-size:11px;padding:2px 10px;margin-right:4px;background:transparent;color:#1e40af;border:1px solid #93c5fd;border-radius:4px;cursor:pointer;';
+    simToggleBtnHtml = '<button id="ai-panel-sim-toggle-btn" style="' + simToggleStyle + '">' + (aiPanelForcePage ? '页面分析' : '模拟分析') + '</button>';
+  }
+
   box.innerHTML =
     '<div style="padding:10px 16px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;user-select:none;background:#dbeafe;border-bottom:1px solid #bfdbfe;">' +
       '<span style="font-weight:600;color:#1e40af;font-size:14px;' + titleExtraStyle + '">' + titleText + '</span>' +
       '<div style="display:flex;align-items:center;gap:4px;">' +
+        simToggleBtnHtml +
         lockBtnHtml +
         '<span id="ai-panel-toggle" style="color:#60a5fa;font-size:12px;cursor:pointer;">' + (aiPanelCollapsed ? '▶ 展开' : '▼ 收起') + '</span>' +
       '</div>' +
@@ -250,13 +264,32 @@ function updateSmartAnalysisPanel(forceRebuild) {
     });
   }
 
-  // Issue 10: Fetch dispatch — hover takes priority even in sim mode.
+  // Simulation toggle button — switches between simulation analysis and page analysis
+  var simToggleBtn = document.getElementById('ai-panel-sim-toggle-btn');
+  if (simToggleBtn) {
+    simToggleBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      aiPanelForcePage = !aiPanelForcePage;
+      if (aiPanelForcePage) {
+        // Switching to page view: clear hover, fetch page analysis
+        aiPanelFocus = null;
+        aiPanelLastContent = '';
+        aiPanelLockedTitle = '';
+        clearTimeout(hoverTimer);
+        clearTimeout(aiPanelRestoreTimer);
+      }
+      // Rebuild panel — button text + fetch dispatch follow aiPanelForcePage
+      updateSmartAnalysisPanel(true);
+    });
+  }
+
+  // Issue 10: Fetch dispatch — hover > page-force > simulation > page default
   if (aiPanelFocus) {
     fetchFocusedAnalysis(aiPanelFocus);
-  } else if (simulationMode && globalData._original) {
-    fetchSimAnalysisForPanel();
-  } else {
+  } else if (aiPanelForcePage || !simulationMode) {
     fetchPageInsight();
+  } else {
+    fetchSimAnalysisForPanel();
   }
 }
 
@@ -323,6 +356,9 @@ function fetchPageInsight() {
       }
       if (content) content.textContent = summary + extra;
       if (engine && res.generated_by) engine.textContent = '引擎: ' + res.generated_by;
+      // Update panel title to reflect current page
+      var titleEl = document.querySelector('#ai-panel-box div span');
+      if (titleEl) titleEl.textContent = '智能分析 · ' + getPageTopic(currentPage);
     })
     .catch(function(err) {
       clearTimeout(timeoutId);
@@ -489,8 +525,11 @@ function applySimulation(data) {
         if (s.name.indexOf('停车') >= 0) { s.count = Math.max(0, Math.round(s.count * factor)); }
       });
       if (d.kpis) {
-        d.kpis.roi = Math.round(d.kpis.roi * (1 + (p.pct / 100) * 0.5));
         d.kpis.total_issued = Math.round(d.kpis.total_issued * factor);
+        // Fix: coupon_volume 削减的是低效券（如停车券），砍掉后 ROI 应微升而非下降
+        // pct > 0 (增发) → ROI 有正向预期；pct < 0 (削减低效券) → ROI 微升（分母降得比分子多）
+        // 系数 0.15 保证削减时 ROI 微升但不夸张，增发时 ROI 有合理提升
+        d.kpis.roi = Math.round(d.kpis.roi * (1 - (p.pct / 100) * 0.15));
       }
     }
     if (p.action === 'sales_efficiency') {
@@ -567,6 +606,7 @@ function resetSimulation() {
   }
   simulationParams = [];
   simulationMode = false;
+  aiPanelForcePage = false;  // Reset page-view force flag
   cohortExpanded = false;
   originalData = null;
   baselineData = null;
@@ -1829,6 +1869,7 @@ function bindPageRouting() {
       if (breadcrumb) breadcrumb.textContent = title;
       // R4: Update current page + refresh AI panel
       currentPage = page;
+      aiPanelForcePage = false;  // Reset force-page flag on navigation
       if (!aiPanelLocked) {
         aiPanelFocus = null;
         clearTimeout(aiPanelRestoreTimer);
@@ -2136,6 +2177,7 @@ function bindHoverAnalysis() {
       aiPanelFocus = null;
     } else {
       aiPanelFocus = cleanText;
+      aiPanelForcePage = false;  // Hover overrides page-view force
     }
     clearTimeout(aiPanelRestoreTimer);
     updateSmartAnalysisPanel();
