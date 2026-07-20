@@ -57,8 +57,18 @@ def _get_deepseek_key():
 
 def generate_insight(kpis, structure, cohorts, lag_data, anomalies):
     """
-    Generate AI-powered business insight. DeepSeek first, local fallback.
+    Generate diagnostic insight with LLM narrative + local rule engine.
+
+    Architecture:
+      - LOCAL (100% deterministic): scenario detection, severity, effect, pct,
+        card titles. Same data = same diagnosis, every time.
+      - LLM (DeepSeek, temperature=0): executive_summary, card body text (text),
+        and how_to action steps. The LLM writes natural-language suggestions
+        based on the local engine's structured diagnosis.
+
+    If LLM fails or no API key, local template fallback handles everything.
     """
+    # 1. Local engine: deterministic diagnosis (scenarios → cards with title/effect/pct)
     template = _build_template_insight(kpis, structure, cohorts, lag_data)
     template['anomaly'] = anomalies
 
@@ -67,19 +77,33 @@ def generate_insight(kpis, structure, cohorts, lag_data, anomalies):
         print('[Insight] No DeepSeek key, using local template')
         return template
 
+    # 2. LLM writes: executive_summary + top_finding + per-card text & how_to
     try:
-        deepseek = _call_deepseek(kpis, structure, cohorts, anomalies, api_key)
-        if deepseek:
-            deepseek['anomaly'] = anomalies
-            return deepseek
+        llm_result = _call_deepseek_full_narrative(kpis, structure, cohorts, lag_data, template, api_key)
+        if llm_result:
+            template['executive_summary'] = llm_result.get('executive_summary', template['executive_summary'])
+            template['top_finding'] = llm_result.get('top_finding', template['top_finding'])
+            # Override per-card text and how_to with LLM-generated suggestions
+            card_texts = llm_result.get('card_texts', {})
+            for i, rec in enumerate(template.get('recommendations', [])):
+                tag = rec.get('_tag', '')
+                if tag and tag in card_texts:
+                    ct = card_texts[tag]
+                    rec['text'] = ct.get('text', rec.get('text', ''))
+                    rec['how_to'] = ct.get('how_to', rec.get('how_to', []))
+            template['generated_by'] = 'DeepSeek LLM + 本地规则引擎'
     except Exception as e:
-        print(f'[Insight] DeepSeek failed: {type(e).__name__}: {e}')
+        print(f'[Insight] DeepSeek narrative failed: {type(e).__name__}: {e}')
 
     return template
 
 
 def _build_template_insight(kpis, structure, cohorts, lag_data):
-    """Local rule-based insight generator (matches Streamlit ai_engine)."""
+    """Local rule-based insight generator.
+
+    Recommendations now derive from SCENARIO_MAP (same table as DeepSeek path).
+    This ensures pct values are consistent whether LLM or local engine runs.
+    """
     alerts = []
     recommendations = []
     insights = []
@@ -87,6 +111,8 @@ def _build_template_insight(kpis, structure, cohorts, lag_data):
     roi = kpis.get('roi', 0)
     conversion = kpis.get('conversion_rate', 0)
     penetration = kpis.get('coupon_leverage', 0)
+    member_contribution = kpis.get('member_contribution', 0)
+    aov = kpis.get('aov', 0)
 
     parking_share = 0
     for s in structure:
@@ -94,16 +120,16 @@ def _build_template_insight(kpis, structure, cohorts, lag_data):
             parking_share = s.get('pct', 0)
             break
 
+    # === Alerts (same as before) ===
     if parking_share > 70:
         alerts.append({
             'severity': 'critical',
             'message': f'停车券占发券总量 {parking_share:.0f}%，核销率极低，存在严重结构性错配。'
         })
-        recommendations.append({
-            'text': f'将停车券预算削减 50%（约 CNY 120,000），重新分配至高 ROI 客群专属体验券。',
-            'action': '削减停车券50%',
-            'effect': 'coupon_volume',
-            'pct': -50,
+    elif parking_share > 40:
+        alerts.append({
+            'severity': 'warning',
+            'message': f'停车券占发券总量 {parking_share:.0f}%，券种结构存在优化空间。'
         })
 
     if roi < 10:
@@ -129,22 +155,14 @@ def _build_template_insight(kpis, structure, cohorts, lag_data):
             'message': f'发券动销渗透率仅 {penetration:.3f}% — 营销杠杆效应极弱。'
         })
 
+    if member_contribution < 50:
+        alerts.append({
+            'severity': 'info',
+            'message': f'会员贡献占比 {member_contribution}%，会员运营存在缺口。'
+        })
+
     high_roi = [c for c in cohorts if c.get('redeem_rate', 0) >= 1 and c.get('atv', 0) >= 500]
     drain = [c for c in cohorts if c.get('avg_coupons', 0) >= 5 and c.get('atv', 0) < 200]
-
-    if high_roi:
-        best = high_roi[0]
-        insights.append(
-            f'{best["level"]}/{best["age_group"]} 是最优 ROI 转化客群：'
-            f'客单价 CNY {best["atv"]:,.0f}，核销率 {best["redeem_rate"]:.1f}%。'
-            f'建议加大该客群的营销预算倾斜。'
-        )
-        recommendations.append({
-            'text': f'将 80% 营销预算集中投放至 {best["level"]}/{best["age_group"]} 客群，预计 ROI 可提升 3 倍。',
-            'action': f'加大{best["level"]}客群投放',
-            'effect': 'sales_efficiency',
-            'pct': 30,
-        })
 
     if drain:
         worst = drain[0]
@@ -153,12 +171,87 @@ def _build_template_insight(kpis, structure, cohorts, lag_data):
             'message': f'{worst["level"]}/{worst["age_group"]} 被判定为券效耗损型客群：'
                        f'人均领券 {worst["avg_coupons"]:.0f} 张，客单价仅 CNY {worst["atv"]:,.0f}。'
         })
-        recommendations.append({
-            'text': f'对 {worst["level"]}/{worst["age_group"]} 客群实施发券熔断，限制 3 张/人/月。',
-            'action': f'熔断{worst["level"]}客群',
-            'effect': 'coupon_volume',
-            'pct': -80,
-        })
+
+    # === Build scenario list — every relevant dimension gets a card ===
+    # Thresholds are deliberately broad: even "healthy" data gets an info-level card
+    # so users see the full picture, not just alerts.  Severity reflects actual risk.
+    scenarios = []
+
+    # 1. Coupon structure — always assessed
+    if parking_share > 70:
+        scenarios.append({"tag": "parking_over_70", "severity": "high", "reasoning": f"停车券占比{parking_share:.0f}%"})
+    elif parking_share > 40:
+        scenarios.append({"tag": "parking_over_40", "severity": "medium", "reasoning": f"停车券占比{parking_share:.0f}%"})
+    elif parking_share > 0:
+        # Even if parking share is low, note the coupon structure
+        scenarios.append({"tag": "healthy_overall", "severity": "low", "reasoning": f"停车券占比{parking_share:.0f}% 健康"})
+
+    # 2. ROI — always assessed
+    if roi < 10:
+        scenarios.append({"tag": "roi_below_10", "severity": "high", "reasoning": f"ROI仅{roi:.1f}%"})
+    elif roi < 30:
+        scenarios.append({"tag": "roi_below_30", "severity": "medium", "reasoning": f"ROI仅{roi:.1f}%"})
+
+    # 3. Conversion rate — always assessed
+    if conversion < 1.0:
+        scenarios.append({"tag": "conversion_below_1", "severity": "high", "reasoning": f"核销率{conversion:.2f}%"})
+    elif conversion < 5.0:
+        # Moderate conversion — still room to improve
+        scenarios.append({"tag": "conversion_below_1", "severity": "low", "reasoning": f"核销率{conversion:.2f}%"})
+
+    # 4. Penetration — always assessed
+    if penetration < 0.05:
+        scenarios.append({"tag": "penetration_below_5", "severity": "high", "reasoning": f"渗透率{penetration:.3f}%"})
+    elif penetration < 0.5:
+        scenarios.append({"tag": "penetration_below_5", "severity": "low", "reasoning": f"渗透率{penetration:.3f}%"})
+
+    # 5. Member contribution — always assessed
+    if member_contribution < 50:
+        severity = "high" if member_contribution < 30 else "medium"
+        scenarios.append({"tag": "member_contribution_low", "severity": severity, "reasoning": f"会员贡献{member_contribution}%"})
+    elif member_contribution < 80:
+        scenarios.append({"tag": "member_contribution_low", "severity": "low", "reasoning": f"会员贡献{member_contribution}%"})
+
+    # 6. AOV — always assessed
+    if aov < 300:
+        scenarios.append({"tag": "low_aov", "severity": "high", "reasoning": f"客单价{aov:.0f}"})
+    elif aov < 800:
+        scenarios.append({"tag": "low_aov", "severity": "low", "reasoning": f"客单价{aov:.0f}"})
+
+    # 7. GREEN cohorts — high conversion + high AOV segments
+    if high_roi:
+        scenarios.append({"tag": "high_green_cohort", "severity": "medium", "reasoning": "GREEN高转化客群"})
+    else:
+        # Even without explicit GREEN cohorts, encourage nurturing
+        scenarios.append({"tag": "high_green_cohort", "severity": "low", "reasoning": "培育高转化客群"})
+
+    # 8. RED drain cohorts
+    if drain:
+        scenarios.append({"tag": "red_cohort_drain", "severity": "high", "reasoning": "RED耗损客群"})
+
+    # 9. Lag correlation — always assessed (this is a core analysis dimension)
+    if lag_data and len(lag_data) > 0:
+        best_lag = max(lag_data, key=lambda x: abs(x.get('r', 0) or 0))
+        best_r = best_lag.get('r', 0) or 0
+        if best_r < 0.2 and best_r > -0.1:
+            scenarios.append({"tag": "weak_lag_correlation", "severity": "medium", "reasoning": f"最佳r={best_r:.2f}偏弱"})
+        elif best_r < 0:
+            scenarios.append({"tag": "negative_lag", "severity": "high", "reasoning": f"最佳r={best_r:.2f}负相关"})
+        elif best_r < 0.5:
+            scenarios.append({"tag": "weak_lag_correlation", "severity": "low", "reasoning": f"最佳r={best_r:.2f}"})
+
+    # === Resolve scenarios → deterministic recommendations via SCENARIO_MAP ===
+    if scenarios:
+        recommendations = _resolve_scenarios_to_recs(scenarios, kpis, structure, cohorts)
+
+    # Insights (keep original logic)
+    if high_roi:
+        best = high_roi[0]
+        insights.append(
+            f'{best["level"]}/{best["age_group"]} 是最优 ROI 转化客群：'
+            f'客单价 CNY {best["atv"]:,.0f}，核销率 {best["redeem_rate"]:.1f}%。'
+            f'建议加大该客群的营销预算倾斜。'
+        )
 
     # Executive summary
     exec_parts = []
@@ -176,10 +269,28 @@ def _build_template_insight(kpis, structure, cohorts, lag_data):
     return {
         'executive_summary': ' '.join(exec_parts) if exec_parts else '当前数据范围不足，无法生成完整诊断。',
         'alerts': alerts or [{'severity': 'info', 'message': '当前数据范围内未检测到关键告警。'}],
-        'recommendations': recommendations or [{'text': '持续监控各客群表现，关注新出现的转化模式。', 'action': '持续监控', 'effect': 'sales_efficiency', 'pct': 5}],
+        'recommendations': recommendations or [
+            {
+                '_tag': 'healthy_overall',
+                'text': '当前各指标处于健康区间，建议维持现有营销节奏。',
+                'action': '保持监控',
+                'effect': 'sales_efficiency',
+                'effect_label': '销售效率',
+                'pct': 5,
+                'title': '常规监控',
+                'severity': 'info',
+                'how_to': [
+                    '维持现有营销节奏，每两周做一次券种结构复盘',
+                    '重点监控 ROI 与核销率走势，阈值触发即自动告警',
+                    '尝试 1-2 个新券型的小规模 A/B 测试，持续寻找增量空间',
+                ],
+            }
+        ],
         'top_finding': insights[0][:80] if insights else '数据范围过窄，无法形成明确结论。',
         'generated_by': '本地规则引擎',
+        '_scenarios': scenarios,  # Pass to generate_insight for LLM severity judgment
     }
+    
 
 
 def _call_deepseek(kpis, structure, cohorts, anomalies, api_key):
@@ -222,21 +333,27 @@ def _call_deepseek(kpis, structure, cohorts, anomalies, api_key):
     if anomalies:
         lines.append(f"- 异常检测: {anomalies.get('anomaly_count', 0)} 个异常点")
 
+    # Build the list of available scenario tags for the LLM prompt
+    scenario_tags_str = ", ".join(sorted(SCENARIO_MAP.keys()))
+
     response = client.chat.completions.create(
         model="deepseek-chat",
         messages=[
             {"role": "system", "content": (
-                "你是侨福芳草地的高级营销数据分析师。请基于给定数据生成专业洞察。"
-                "严格返回 JSON 格式，不要 markdown 代码块，字段如下："
+                "你是侨福芳草地的高级营销数据分析师。请基于给定数据生成专业洞察。\n"
+                "严格返回 JSON 格式，不要 markdown 代码块，字段如下：\n"
                 '{"executive_summary": "100字以内中文核心结论",'
                 '"alerts": [{"severity":"critical/warning/info","message":"..."}],'
-                '"recommendations": [{"text": "建议文字描述", "action": "建议标题", "effect": "coupon_volume|sales_efficiency|lag_correlation", "pct": 数值}],'
+                '"scenarios": [{"tag": "场景标签", "severity": "low|medium|high", "reasoning": "为什么判断为此场景"}],'
                 '"top_finding": "最重要发现50字以内"}\n'
-                "effect 字段只能从以下三个对称维度中选择：\n"
-                "- coupon_volume: 调整发券量，正数为增发，负数为削减\n"
-                "- sales_efficiency: 调整销售额/转化效率，正数为提升，负数为下降\n"
-                "- lag_correlation: 调整发券滞后效应强度，正数为增强相关性，负数为减弱\n"
-                "pct 为百分比数值，如 30 表示 +30%，-60 表示 -60%。"
+                "\n"
+                "【重要】scenarios 中的 tag 必须从以下预定义标签中选择，不要自己编造标签：\n"
+                f"{scenario_tags_str}\n"
+                "\n"
+                "severity 表示严重程度：low=轻度, medium=中度, high=重度。\n"
+                "reasoning 用 20 字以内说明为什么判断为此场景。\n"
+                "每个 scenario 独立判断，不要重复同一个标签。\n"
+                "最多返回 4 个 scenarios，按严重程度从高到低排序。\n"
                 "不要用 emoji，不要用 ** 加粗，纯中文。"
             )},
             {"role": "user", "content": "\n".join(lines)}
@@ -254,6 +371,426 @@ def _call_deepseek(kpis, structure, cohorts, anomalies, api_key):
     result['generated_by'] = 'DeepSeek LLM'
     print('[Insight] DeepSeek success')
     return result
+
+
+
+
+def _call_deepseek_full_narrative(kpis, structure, cohorts, lag_data, template, api_key):
+    """
+    Ask DeepSeek to write:
+      - executive_summary + top_finding (narrative text)
+      - Per-card text (diagnosis body) and how_to (3 concrete action steps)
+
+    The local engine provides the structured diagnosis (tag, title, effect, pct,
+    severity). DeepSeek translates these into natural-language suggestions with
+    concrete, data-aware how_to steps.
+    """
+    try:
+        from openai import OpenAI
+    except ImportError:
+        return None
+
+    client = OpenAI(api_key=api_key.strip(), base_url="https://api.deepseek.com/v1")
+
+    parking_share = 0
+    for s in structure:
+        if '停车' in s.get('name', ''):
+            parking_share = s.get('pct', 0)
+            break
+
+    # Summarize the local diagnosis for LLM context
+    rec_summary = []
+    rec_tags = []
+    for r in template.get('recommendations', [])[:6]:
+        sev = {'critical': '严重', 'warning': '预警', 'info': '信息'}.get(r.get('severity', ''), '信息')
+        tag = r.get('_tag', '')
+        rec_tags.append(tag)
+        rec_summary.append(
+            f"  [{sev}] tag={tag} | 标题={r['title']} | effect={r.get('effect_label','')} | pct={r.get('pct',0):+d}%"
+        )
+
+    lines = ["营销数据："]
+    lines.append(f"ROI: {kpis.get('roi')}% | 核销率: {kpis.get('conversion_rate')}%")
+    lines.append(f"停车券占比: {parking_share:.1f}% | 客单价: CNY {kpis.get('aov'):,.0f}")
+    lines.append(f"会员贡献: {kpis.get('member_contribution')}% | 发券总量: {kpis.get('total_issued', 0):,}")
+    lines.append(f"渗透率: {kpis.get('coupon_leverage', 0):.3f}%")
+    lines.append(f"\n系统已自动诊断出以下问题：")
+    lines.extend(rec_summary)
+
+    if lag_data:
+        best = max(lag_data, key=lambda x: abs(x.get('r', 0) or 0))
+        lines.append(f"\n滞后分析: 最佳窗口 {best.get('lag', '?')}天, r={best.get('r', 0):.2f}")
+
+    # Build the expected card_texts schema
+    card_schema_parts = []
+    for tag in rec_tags:
+        card_schema_parts.append(
+            f'    "{tag}": {{"text": "诊断正文（50-80字）", "how_to": ["步骤1", "步骤2", "步骤3"]}}'
+        )
+    card_schema = ",\n".join(card_schema_parts)
+
+    system_prompt = (
+        "你是侨福芳草地的高级营销数据分析师。\n"
+        "系统已经自动完成了数据诊断（场景识别、严重程度、effect维度、pct数值），"
+        "请基于诊断结果撰写自然语言的建议文案。\n\n"
+        "返回 JSON（不要 markdown 代码块）：\n"
+        "{\n"
+        '  "executive_summary": "120字以内核心结论，涵盖最重要的2-3个发现",\n'
+        '  "top_finding": "最重要发现，40字以内",\n'
+        '  "card_texts": {\n'
+        f'{card_schema}\n'
+        '  }\n'
+        "}\n\n"
+        "要求：\n"
+        "- text: 50-80字的诊断正文，自然语言，结合数据事实（如 ROI 数值、停车券占比）\n"
+        "- how_to: 3条具体可执行的操作步骤，每条20-40字，要可量化、有时限、可落地\n"
+        "- 每条 card 的 how_to 要呼应其 effect 方向和 pct 数值\n"
+        "不要 emoji，不要 markdown，纯中文。"
+    )
+
+    response = client.chat.completions.create(
+        model="deepseek-chat",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": "\n".join(lines)},
+        ],
+        temperature=0, max_tokens=1200, timeout=25,
+    )
+
+    content = response.choices[0].message.content.strip()
+    print(f'[Insight Narrative] DeepSeek raw (first 300): {content[:300]}')
+
+    if content.startswith("```"):
+        content = content.replace("```json", "").replace("```", "").strip()
+
+    result = json.loads(content)
+    print(f'[Insight Narrative] summary: {result.get("executive_summary", "")[:80]}...')
+    cards = result.get('card_texts', {})
+    print(f'[Insight Narrative] cards written: {list(cards.keys())}')
+    return result
+
+
+# ===== Scenario-to-Effect Mapping Table =====
+# AI (DeepSeek) analyzes data → returns scenario tags + severity → local lookup
+# produces deterministic effect + pct. Same scenario + same severity = same pct.
+#
+# Format: scenario_tag: (effect, mild_pct, moderate_pct, severe_pct)
+# Severity levels: "low" / "medium" / "high"
+
+SCENARIO_MAP = {
+    # --- Coupon Volume adjustments ---
+    "parking_over_70":      ("coupon_volume",    -30,  -50,  -70),
+    "parking_over_40":      ("coupon_volume",    -15,  -30,  -50),
+    "red_cohort_drain":     ("coupon_volume",    -50,  -70,  -90),
+    "over_issuance":        ("coupon_volume",    -20,  -40,  -60),
+
+    # --- Sales Efficiency adjustments ---
+    "roi_below_10":         ("sales_efficiency",  10,   20,   30),
+    "roi_below_30":         ("sales_efficiency",   5,   10,   15),
+    "conversion_below_1":   ("sales_efficiency",  10,   20,   30),
+    "penetration_below_5":  ("sales_efficiency",   5,   15,   25),
+    "high_green_cohort":    ("sales_efficiency",  15,   25,   40),
+    "member_contribution_low": ("sales_efficiency", 5,  10,   20),
+    "low_aov":              ("sales_efficiency",   5,   10,   20),
+
+    # --- Lag Correlation adjustments ---
+    "weak_lag_correlation": ("lag_correlation",   10,   20,   30),
+    "negative_lag":         ("lag_correlation",   15,   25,   35),
+
+    # --- Fallback / generic ---
+    "healthy_overall":      ("sales_efficiency",   0,    5,   10),
+}
+
+VALID_SEVERITIES = {"low", "medium", "high"}
+
+
+def _resolve_scenarios_to_recs(scenarios, kpis, structure, cohorts):
+    """Convert DeepSeek scenario tags + severity → fixed effect + pct recommendations.
+
+    Deduplication strategy: by scenario **tag** (not by effect dimension).
+    Multiple cards can share the same effect dimension (e.g. ROI 10% and
+    conversion 1% both map to sales_efficiency but are different diagnoses).
+    This way the user sees the full picture — one card per unique problem.
+
+    Args:
+        scenarios: list of {"tag": str, "severity": "low"|"medium"|"high", "reasoning": str}
+        kpis: KPI dict (used for dynamic text generation)
+        structure: coupon structure list
+        cohorts: cohort list
+
+    Returns:
+        list of recommendation dicts with fixed effect + pct values
+    """
+    recommendations = []
+    seen_tags = set()
+    sev_rank = {"high": 3, "medium": 2, "low": 1}
+
+    # Sort scenarios by severity (high first) so critical issues are surfaced first
+    sorted_scenarios = sorted(
+        scenarios,
+        key=lambda s: -sev_rank.get(s.get("severity", "medium").lower(), 2)
+    )
+
+    for sc in sorted_scenarios:
+        tag = sc.get("tag", "").strip()
+        severity = sc.get("severity", "medium").strip().lower()
+        reasoning = sc.get("reasoning", "")
+
+        if severity not in VALID_SEVERITIES:
+            severity = "medium"
+
+        # Deduplicate by tag: each unique scenario gets its own card
+        if tag in seen_tags:
+            continue
+        seen_tags.add(tag)
+
+        entry = SCENARIO_MAP.get(tag)
+        if not entry:
+            continue
+
+        effect, mild_pct, moderate_pct, severe_pct = entry
+
+        # Pick pct based on severity
+        if severity == "high":
+            pct = severe_pct
+        elif severity == "low":
+            pct = mild_pct
+        else:
+            pct = moderate_pct
+
+        # Build card skeleton: deterministic fields from local engine
+        # text and how_to are populated by local template initially;
+        # LLM overrides them in generate_insight() if available.
+        text, action, title, sev_label, how_to, effect_label = _build_rec_text(
+            tag, effect, pct, severity, kpis, structure, cohorts, reasoning
+        )
+        recommendations.append({
+            "_tag": tag,
+            "text": text,
+            "action": action,
+            "effect": effect,
+            "effect_label": effect_label,
+            "pct": pct,
+            "title": title,
+            "severity": sev_label,
+            "how_to": how_to,
+        })
+
+    return recommendations
+
+
+def _build_rec_text(tag, effect, pct, severity, kpis, structure, cohorts, reasoning):
+    """Build natural-language text + action + how-to list + metadata.
+
+    Returns (text, action, title, sev_label, how_to, effect_label).
+    - text:         the diagnosis (1-2 sentence)
+    - action:       the one-line summary (shown in card action box)
+    - title:        short title for the card header
+    - sev_label:    'critical' | 'warning' | 'info'
+    - how_to:       list of 3 concrete actionable steps (the "how")
+    - effect_label: Chinese label for the effect dimension (e.g. '发券量')
+    """
+    parking_share = 0
+    for s in (structure or []):
+        if "停车" in s.get("name", ""):
+            parking_share = s.get("pct", 0)
+            break
+
+    roi = kpis.get("roi", 0)
+    conversion = kpis.get("conversion_rate", 0)
+    aov = kpis.get("aov", 0)
+    total_issued = kpis.get("total_issued", 0)
+    member_contribution = kpis.get("member_contribution", 0)
+    coupon_leverage = kpis.get("coupon_leverage", 0)
+
+    # Find best/worst cohorts for context
+    green = [c for c in (cohorts or []) if c.get("tag") == "GREEN"]
+    red = [c for c in (cohorts or []) if c.get("tag") == "RED"]
+    best_green = green[0] if green else None
+    worst_red = red[0] if red else None
+
+    # Effect dimension → Chinese label
+    effect_label = {
+        "coupon_volume": "发券量",
+        "sales_efficiency": "销售效率",
+        "lag_correlation": "滞后效应",
+    }.get(effect, "营销效能")
+
+    # Severity → label mapping
+    sev_label = {"high": "critical", "medium": "warning", "low": "info"}.get(severity, "info")
+    pct_abs = abs(pct)
+    arrow = "↑" if pct > 0 else "↓"
+
+    if tag == "parking_over_70":
+        title = "停车券结构错配"
+        text = f"停车券当前占比 {parking_share:.0f}%，但核销率极低，大量营销预算被低效券种消耗，是当前 ROI 承压的核心来源。"
+        action = f"削减停车券 {pct_abs}%"
+        how_to = [
+            f"下月排期将停车券发放量削减 {pct_abs}%，优先停发 30 元以下小额停车券",
+            f"将腾出的预算重新分配至 3-5 个高转化 GREEN 客群的体验券（满减 / 折扣 / 业态专属）",
+            f"同步将 RED 标签客群（人均领券 ≥ 5 张但客单价 < ¥200）的领券上限收紧至 3 张/月",
+        ]
+
+    elif tag == "parking_over_40":
+        title = "停车券结构优化"
+        text = f"停车券当前占比 {parking_share:.0f}%，券种结构过度依赖单一券型，存在结构性优化空间。"
+        action = f"优化停车券 -{pct_abs}%"
+        how_to = [
+            f"按业态分层调整停车券发放策略：餐饮、零售、亲子业态降低 10%，其余业态维持",
+            f"新增 2-3 个高核销率券种（如满 200 减 50 体验券、品类专属券）填补释放的预算",
+            f"建立月度券种结构评审机制，跟踪停车券占比目标 ≤ 30%",
+        ]
+
+    elif tag == "roi_below_10":
+        title = "ROI 严重告警"
+        text = f"营销 ROI 仅 {roi:.1f}%，远低于 10% 安全线，每投入 1 元营销成本回报不足 0.1 元。"
+        action = f"紧急提升 ROI {arrow}{pct_abs}%"
+        how_to = [
+            f"立即审计近 30 天所有券种的 ROI，砍掉 ROI 为负或 < 5% 的券种（预计可释放 30-40% 预算）",
+            f"将释放预算倾斜至 GREEN 高转化客群（核销率 ≥ 1% 且客单价 ≥ ¥500），目标 ROI 提升至 {roi:.1f}% → {roi * (1 + pct/100):.1f}%",
+            "建立 ROI 周看板：每周一更新各券种 ROI，超阈值的券种自动告警并暂停发放",
+        ]
+
+    elif tag == "roi_below_30":
+        title = "ROI 利润承压"
+        text = f"营销 ROI 为 {roi:.1f}%，低于 30% 警戒线，每元营销投入回报不及预期。"
+        action = f"提升 ROI {arrow}{pct_abs}%"
+        how_to = [
+            f"识别 ROI 最低的 3 个券种，将其发券量减少 {pct_abs}%，转投 ROI 更高的券种",
+            f"对 GOLD 自然高价值客群减少直接折扣券发放，改为体验式服务（VIP 专场 / 私人造型师）以保护毛利",
+            f"A/B 测试 2 种新券设计（满减梯度券 / 限时品类券），2 周后对比 ROI 选择优胜方案",
+        ]
+
+    elif tag == "conversion_below_1":
+        title = "核销转化堵点"
+        text = f"核销转化率仅 {conversion:.2f}%，券→消费链路存在明显堵点，大量券被领走但未带来实际消费。"
+        action = f"提升核销率 {arrow}{pct_abs}%"
+        how_to = [
+            "缩短券有效期：现有券有效期普遍较长，缩短至 7-14 天制造紧迫感（核销率通常可提升 30-50%）",
+            "提高券面额与客单价的匹配度：对客单价 ¥300-500 的客群发放满 200 减 50 券，避免满 1000 减 100 这类难触达券",
+            "增加券使用提醒：在券到期前 3 天通过短信 / 微信推送提醒，引导到店核销",
+        ]
+
+    elif tag == "penetration_below_5":
+        title = "营销渗透不足"
+        text = f"发券动销渗透率仅 {coupon_leverage:.3f}%，发券对整体销售的拉动作用很弱，营销杠杆效应未释放。"
+        action = f"扩大渗透 {arrow}{pct_abs}%"
+        how_to = [
+            "扩大发券客群覆盖：从当前活跃客群扩展至近 6 个月有消费的客群，预计可增加 40-60% 触达",
+            "在客流高峰前 3 天集中投放（参考滞后分析的最佳窗口），而非均匀分布",
+            "打通线上线下券核销链路：会员小程序、POS 收银台、停车缴费系统全部支持券识别",
+        ]
+
+    elif tag == "high_green_cohort":
+        title = "GREEN 高转化客群深挖"
+        if best_green:
+            text = f"{best_green['level']}/{best_green['age_group']} 是当前最优 ROI 转化客群，客单价 CNY {best_green.get('atv', 0):,.0f}、核销率 {best_green.get('redeem_rate', 0):.1f}%，预算倾斜空间充足。"
+            action = f"加大 {best_green['level']} 客群投放"
+            how_to = [
+                f"为 {best_green['level']}/{best_green['age_group']} 客群定制专属券（如满 500 减 80），发券量提升 30%",
+                f"建立该客群的 VIP 复购激励：每月消费满 ¥{int(best_green.get('atv', 0) * 1.2):,} 即赠送一次专属体验服务",
+                "搭建自动识别→定向推送闭环：客群画像每日更新，命中即通过企微推送个性化券",
+            ]
+        else:
+            text = "识别到高转化潜力客群，但当前未单独追踪，建议加大精准投放力度。"
+            action = f"加大高转化投放 {arrow}{pct_abs}%"
+            how_to = [
+                "在 KMeans 聚类结果中圈定核销率前 20% 的客群组，建立专属运营策略",
+                "为该客群设计阶梯奖励券：消费满 ¥300 减 ¥50、满 ¥600 减 ¥120",
+                "每周复盘客群消费数据，动态调整券面额和有效期",
+            ]
+
+    elif tag == "red_cohort_drain":
+        title = "RED 耗损客群熔断"
+        if worst_red:
+            text = f"{worst_red['level']}/{worst_red['age_group']} 是典型耗损客群：人均领券 {worst_red.get('avg_coupons', 0):.1f} 张但客单价仅 CNY {worst_red.get('atv', 0):,.0f}，正在侵蚀营销预算。"
+            action = f"熔断 {worst_red['level']} 客群"
+            how_to = [
+                f"立即对 {worst_red['level']}/{worst_red['age_group']} 客群实施发券熔断：每月领券上限收紧至 3 张",
+                "已领券未使用的回收 50%（重新分配给 GREEN 客群），减少沉睡券占用预算",
+                "对熔断后 3 个月仍未转化的客群，从活跃运营名单中移除，释放运营资源",
+            ]
+        else:
+            text = f"识别到耗损型客群：人均领券多但客单价低，建议实施发券熔断机制削减无效投放 {pct_abs}%。"
+            action = f"熔断耗损客群 -{pct_abs}%"
+            how_to = [
+                f"将耗损客群的月发券量削减 {pct_abs}%，优先砍掉小额高频券",
+                "建立耗损客群预警规则：人均领券 ≥ 5 张且客单价 < ¥200 自动加入熔断名单",
+                "为熔断客群提供 1 次高门槛券（如满 1000 减 200），如仍未转化则放弃持续投入",
+            ]
+
+    elif tag == "weak_lag_correlation":
+        title = "滞后效应偏弱"
+        text = "发券与销售之间的时间关联性弱，发券时点未能有效踩中消费决策节点。"
+        action = f"优化滞后窗口 {arrow}{pct_abs}%"
+        how_to = [
+            "将主要发券日固定到消费前 3-5 天的窗口（参考最佳滞后分析结果）",
+            "提前在消费高峰前 7 天发布预告券（小额面值，制造期待）→ 高峰前 3 天发放主券（高面值，促成转化）",
+            "设置补发窗口：高峰后 1 天针对未转化客群发放 1 次高门槛券，覆盖边缘人群",
+        ]
+
+    elif tag == "negative_lag":
+        title = "滞后效应异常"
+        text = "部分滞后天数呈负相关，当天发券反而抑制消费，说明发券与消费决策时机错位。"
+        action = f"修正滞后效应 {arrow}{pct_abs}%"
+        how_to = [
+            "立即暂停当天即时发券（lag=0），全部改为提前 3-7 天预发",
+            "排查负相关背后的券种：这些券可能在消费后被触发，造成统计假象，识别后剔除或重新设计",
+            "建立 A/B 测试机制：新券设计先小范围测试滞后效应，确认正向后全量推广",
+        ]
+
+    elif tag == "member_contribution_low":
+        title = "会员贡献偏低"
+        text = f"会员销售额占比仅 {member_contribution}%，意味着过半销售来自非会员，会员体系对销售的拉动作用偏弱。"
+        action = f"提升会员贡献 {arrow}{pct_abs}%"
+        how_to = [
+            "在收银台、小程序首页强引导非会员顾客扫码注册，会员注册即赠 ¥20 体验券",
+            "为会员设计专享权益：每月 1 次会员日（双倍积分）、生日月 5 折券、生日礼包",
+            "打通会员消费数据：会员每次消费后推送个性化推荐券，提升复购频次",
+        ]
+
+    elif tag == "low_aov":
+        title = "客单价偏低"
+        text = f"客单价仅 CNY {aov:,.0f}，单笔消费金额偏小，整体销售受限于件数而非件数 × 单价。"
+        action = f"提升客单价 {arrow}{pct_abs}%"
+        how_to = [
+            "推出阶梯满减券：满 300 减 30、满 500 减 70、满 800 减 150，引导客单提升 30%",
+            "设计品类组合券：餐饮 + 零售、亲子 + 餐饮的组合券，提升跨业态连带率",
+            "在收银台展示凑单提示：当前差 ¥XX 即可使用满减券，刺激加购",
+        ]
+
+    elif tag == "over_issuance":
+        title = "过度投放"
+        text = f"发券总量 {total_issued:,} 张，单客平均领券过多，存在过度投放导致券贬值、用户疲劳的风险。"
+        action = f"削减过度投放 -{pct_abs}%"
+        how_to = [
+            f"将全量发券量削减 {pct_abs}%，优先砍掉领券 ≥ 10 张的客群加发券",
+            "建立单客月度领券上限：普通会员 8 张、银卡 12 张、金卡 15 张",
+            "提高券品质：减少 5 元以下小额券比例至 20% 以下，专注 30-100 元面值高价值券",
+        ]
+
+    elif tag == "healthy_overall":
+        title = "整体健康"
+        text = "当前各项指标处于健康区间，营销体系运行良好。"
+        action = "保持监控"
+        how_to = [
+            "维持现有营销节奏，每两周做一次券种结构复盘",
+            "重点监控 ROI 与核销率走势，阈值触发即自动告警",
+            "尝试 1-2 个新券型的小规模 A/B 测试，持续寻找增量空间",
+        ]
+
+    else:
+        # Generic fallback: use reasoning from DeepSeek + generic text
+        title = reasoning[:20] if reasoning else "策略优化"
+        text = reasoning if reasoning else f"基于数据分析，建议{'提升' if pct > 0 else '削减'}{abs(pct)}%。"
+        action = f"优化调整 {pct:+d}%"
+        how_to = [
+            f"按建议方向调整幅度 {pct_abs}%",
+            "建立 2 周观察期，监控关键 KPI（核销率、ROI、客单价）变化",
+            "如效果未达预期，叠加下一轮建议微调参数",
+        ]
+
+    return text, action, title, sev_label, how_to, effect_label
 
 
 # ===== Three-Tier Unified Analysis Architecture =====
