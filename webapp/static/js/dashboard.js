@@ -118,7 +118,17 @@ function renderAll(data) {
   updateSimulationNotes(data);
   updateAlertCards();
   // R4: Always-on AI panel — render after everything else
-  updateSmartAnalysisPanel();
+  // Defer to avoid blocking: the /api/insight (diagnostic) request is still
+  // in-flight on Flask's single-threaded dev server.  Wait 500ms so the
+  // diagnostic response can land first, then fetch page_overview.
+  if (data.insight && data.insight.executive_summary) {
+    // If diagnostic insight already returned, fill panel immediately from its summary
+    var c = document.getElementById('ai-panel-content');
+    var e = document.getElementById('ai-panel-engine');
+    if (c) c.textContent = cleanText(data.insight.executive_summary);
+    if (e && data.insight.generated_by) e.textContent = '引擎: ' + data.insight.generated_by;
+  }
+  setTimeout(function() { updateSmartAnalysisPanel(); }, 800);
 }
 
 
@@ -538,6 +548,11 @@ function applySimulation(data) {
         d.kpis.roi = Math.round(d.kpis.roi * (1 + (p.pct / 100) * 0.3));
         d.kpis.total_sales = Math.round(d.kpis.total_sales * sf);
         d.kpis.aov = Math.round(d.kpis.aov * sf);
+        // Fix: sales_efficiency actions (e.g. 提升核销率, 提升ROI, 提升客单价) must also
+        // affect conversion_rate proportionally — otherwise the action's name promise
+        // (e.g. "提升核销率 130%") contradicts the simulated KPI display.
+        // 0.4x coefficient: applies the directional change to conversion without overshooting
+        d.kpis.conversion_rate = Math.round((d.kpis.conversion_rate || 0) * (1 + (p.pct / 100) * 0.4) * 100) / 100;
       }
       if (d.cohorts) d.cohorts.forEach(function(c) {
         c.sales = Math.round(c.sales * sf);
@@ -1301,12 +1316,20 @@ function updateLagChart(lagData) {
   var allRValues = [].concat(allR);
 
   // R3: Original lag data for simulation comparison
+  // Always show the original dashed line in sim mode (so user can see whether simulation changed this metric).
+  // Use distinct colors to differentiate: green = current/simulated, gray dashed = original (pre-sim).
   var origLagMap = null;
+  var lagChanged = false;
   if (simulationMode && globalData._original && globalData._original.lag) {
     origLagMap = {};
     globalData._original.lag.forEach(function(d) {
       origLagMap[d.lag] = d;
       if (d.r != null) allRValues.push(d.r);
+    });
+    // Detect if any lag value actually differs from original
+    lagChanged = sorted.some(function(d) {
+      var orig = origLagMap[d.lag];
+      return orig && Math.abs((orig.r || 0) - (d.r || 0)) > 0.005;
     });
   }
 
@@ -1334,6 +1357,30 @@ function updateLagChart(lagData) {
       datasets.push({ label: '原始 r（模拟前）', data: origR, borderColor: '#9ca3af', backgroundColor: 'transparent', fill: false, tension: 0.4, borderWidth: 2, borderDash: [5, 5], pointRadius: 2, pointBackgroundColor: '#9ca3af', spanGaps: true });
     }
     lagCorrChart = new Chart(ctx, { type: 'line', data: { labels: sorted.map(function(d) { return d.lag + '天'; }), datasets: datasets }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true, labels: { usePointStyle: true, padding: 16, font: { size: 11 } } } }, scales: { y: { min: yMin, max: yMax, grace: '5%', grid: { color: '#f3f4f6' }, ticks: { callback: function(v) { return v.toFixed(2); } } } } } });
+  }
+
+  // Show simulation status hint below the lag chart
+  var lagPanel = lctx ? lctx.closest('.panel') : null;
+  if (lagPanel) {
+    var existingHint = lagPanel.querySelector('.sim-lag-unchanged-hint');
+    if (existingHint) existingHint.remove();
+    if (simulationMode) {
+      var hint = document.createElement('div');
+      hint.className = 'sim-lag-unchanged-hint';
+      hint.style.cssText = 'margin-top:8px;padding:6px 10px;border-radius:4px;font-size:11px;line-height:1.5;';
+      if (lagChanged) {
+        hint.style.background = '#ecfdf5';
+        hint.style.border = '1px solid #6ee7b7';
+        hint.style.color = '#065f46';
+        hint.innerHTML = '<span style="font-weight:600;">模拟已生效：</span>灰色虚线为原始 r 值，绿色实线为模拟后 r 值。本次采纳的建议中有「优化滞后窗口」类操作，滞后相关性已发生变化。';
+      } else {
+        hint.style.background = '#f3f4f6';
+        hint.style.border = '1px dashed #9ca3af';
+        hint.style.color = '#6b7280';
+        hint.innerHTML = '<span style="font-weight:600;">注：</span>灰色虚线 = 原始 r 值（两线重合说明当前采纳的建议不影响滞后相关性）。如需改变滞后窗口，请采纳「优化滞后窗口」类建议。';
+      }
+      lagPanel.querySelector('.panel-body').appendChild(hint);
+    }
   }
   var sctx = $('#lagChart');
   if (sctx) {
@@ -1496,36 +1543,21 @@ function updateKPITables(kpis) {
 function updateInsights(data) {
   // Local mode: don't render diagnostic cards, don't send AI requests
   if (window._aiEnabled === false) {
-    ['insight-1','insight-2','insight-3','insight-4'].forEach(function(id) {
-      var el = document.getElementById(id);
-      if (el) el.innerHTML = '<p style="color:#64748b;text-align:center;padding:20px 0;font-size:13px;line-height:1.8;">智能诊室为 LLM 模式专属功能<br><span style="font-size:12px;color:#94a3b8;">请点击左上角模式切换按钮后使用</span></p>';
-    });
+    var cardsContainer = document.getElementById('insight-cards');
+    if (cardsContainer) cardsContainer.innerHTML = '<div class="panel" style="flex:1 1 100%;"><div class="panel-header"><div class="panel-title">智能诊室</div></div><div class="panel-body"><p style="color:#64748b;text-align:center;padding:20px 0;font-size:13px;line-height:1.8;">智能诊室为 LLM 模式专属功能<br><span style="font-size:12px;color:#94a3b8;">请点击左上角模式切换按钮后使用</span></p></div></div>';
     updateAiVisibility();
     return;
   }
   var k = data.kpis || {}, structure = data.structure || [], cohorts = data.cohorts || [];
   if (!k.total_issued && cohorts.length === 0) return;
+
   var parking = structure.find(function(s) { return s.name.indexOf('停车') >= 0; });
   var parkingPct = parking ? parking.pct : 0;
   var lagData = data.lag || [];
   var best = lagData.length > 0 ? [].concat(lagData).sort(function(a, b) { return b.r - a.r; })[0] : { lag: 3, r: 0.82 };
   var greenItems = cohorts.filter(function(c) { return c.tag === 'GREEN'; });
-  var goldItems = cohorts.filter(function(c) { return c.tag === 'GOLD'; });
-  var totalConsumers = Math.max(1, cohorts.reduce(function(s, c) { return s + (c.issued_users || c.consumers || 0); }, 0));
-  var greenPct = (greenItems.reduce(function(s, c) { return s + (c.issued_users || c.consumers || 0); }, 0) / totalConsumers * 100).toFixed(1);
 
-  // Fix 5: Engine label — show correct engine name for LLM mode
-  var modeLabel;
-  if (window._aiEnabled === false) {
-    modeLabel = ' <span style="font-size:10px;color:#9ca3af;">本地规则</span>';
-  } else {
-    modeLabel = ' <span style="font-size:10px;color:#3b82f6;">DeepSeek LLM</span>';
-  }
-
-  var i1 = $('#insight-1'); if (i1) i1.innerHTML = '<p style="margin-bottom:var(--space-3);"><strong>问题:</strong> 停车券占发券总量的 ' + parkingPct + '%，但核销率极低。大量营销预算被低效券种消耗。</p><p style="margin-bottom:var(--space-3);"><strong>影响:</strong> 营销 ROI ' + (k.roi || 0) + '%' + ((k.roi || 0) < 100 ? '，低于 100% 安全线' : '') + '。发券动销渗透率 ' + (k.coupon_leverage || 0) + '%。</p><p><strong>建议:</strong></p><ul style="padding-left:20px;margin-top:4px;font-size:13px;color:var(--gray-600);"><li>削减停车券预算 60%</li><li>针对 GOLD 客群投放专属体验券</li><li>对 RED 标签客群实施熔断机制</li></ul>' + modeLabel + '<button class="btn btn-primary btn-sm" style="margin-top:8px;" onclick="adoptSuggestion(\'削减停车券60%\',\'cut_parking\',60)">采纳建议</button>';
-  var i2 = $('#insight-2'); if (i2) i2.innerHTML = '<p style="margin-bottom:var(--space-3);"><strong>发现:</strong> 滞后 ' + best.lag + ' 天时，发券量与销售额的皮尔逊相关系数达峰值 r = ' + best.r + '。</p><p><strong>建议:</strong></p><ul style="padding-left:20px;margin-top:4px;font-size:13px;color:var(--gray-600);"><li>将主要发券日固定为消费前' + best.lag + '天</li><li>提前 ' + best.lag + ' 天发布促销预告券</li><li>设置补发窗口，覆盖边缘客群</li></ul>' + modeLabel;
-  var i3 = $('#insight-3'); if (i3) i3.innerHTML = '<p style="margin-bottom:var(--space-3);"><strong>发现:</strong> GREEN 标签客群占总客群 ' + greenPct + '%，贡献了高券动销销售额。</p><p><strong>建议:</strong></p><ul style="padding-left:20px;margin-top:4px;font-size:13px;color:var(--gray-600);"><li>对 GREEN 客群提升发券频次</li><li>设计专属高额满减券</li><li>建立自动识别→推送闭环</li></ul>' + modeLabel + '<button class="btn btn-primary btn-sm" style="margin-top:8px;" onclick="adoptSuggestion(\'GREEN客群加发30%\',\'boost_green\',30)">采纳建议</button>';
-  var i4 = $('#insight-4'); if (i4) i4.innerHTML = '<p style="margin-bottom:var(--space-3);"><strong>发现:</strong> GOLD 标签客群' + goldItems.length + '个组，客单价高，消费能力极强但不依赖优惠券驱动。</p><p><strong>建议:</strong></p><ul style="padding-left:20px;margin-top:4px;font-size:13px;color:var(--gray-600);"><li>避免投放折扣券（侵蚀毛利）</li><li>改为体验式营销</li><li>设计专属服务券</li></ul>' + modeLabel + '<button class="btn btn-primary btn-sm" style="margin-top:8px;" onclick="adoptSuggestion(\'RED客群熔断\',\'melt_red\',50)">采纳建议</button>';
+  // Cards are now fully data-driven via updateAIInsight() — no static slots.
   var ca = $('#chat-answer');
   if (ca) ca.innerHTML = '基于当前数据分析：<br>1. <strong>资源错配</strong>：' + parkingPct + '% 预算投入停车券但回报极低<br>2. <strong>滞后窗口</strong>：最佳发券时点为消费前 ' + best.lag + ' 天（r=' + best.r + '）<br>3. <strong>客群策略</strong>：GREEN 客群（' + greenItems.length + '组）应加大投放，GOLD 客群应走体验式营销路径<br>4. <strong>ROI 风险</strong>：当前 ROI ' + (k.roi || 0) + '%' + ((k.roi || 0) < 100 ? ' 低于安全线，需紧急调整' : '');
 
@@ -1546,7 +1578,9 @@ function updateAiVisibility() {
   }
 }
 
-// ---- AI Insight Panel (unified structure + engine label) ----
+// ---- AI Insight Panel (data-driven dynamic card rendering) ----
+// Each recommendation dict carries {text, action, effect, pct, title, severity_label, severity_color}
+// Cards are generated dynamically — no fixed slots, no hardcoded titles.
 function updateAIInsight(insight) {
   if (!insight) return;
 
@@ -1574,92 +1608,170 @@ function updateAIInsight(insight) {
     var cleanSummary = cleanText(insight.executive_summary || '');
     ca.innerHTML = cleanSummary + '<br><small style="color:var(--gray-400);margin-top:4px;display:block;">引擎: ' + (insight.generated_by || '本地规则引擎') + '</small>';
   }
-  var recs = insight.recommendations || [];
-  var alerts = insight.alerts || [];
-  var topFinding = insight.top_finding || '';
 
-  // Fix 5: Engine tag for diagnostic cards
+  // Defensive: page_overview format has {summary, findings, recommendation}, not {recommendations}.
+  // Convert it to diagnostic recs on the fly so the cards still render.
+  var recs = insight.recommendations || [];
+  if (recs.length === 0 && insight.findings && Array.isArray(insight.findings) && insight.findings.length > 0) {
+    recs = insight.findings.map(function(f, i) {
+      return {
+        text: f,
+        action: f,
+        effect: 'sales_efficiency',
+        effect_label: '销售效率',
+        pct: 0,
+        title: '关键发现 ' + (i + 1),
+        severity: 'info',
+        how_to: ['按数据洞察调整相关策略', '2 周后复盘关键 KPI 变化', '与历史同期对比验证效果'],
+      };
+    });
+    if (insight.recommendation) {
+      recs.push({
+        text: insight.recommendation,
+        action: insight.recommendation,
+        effect: 'sales_efficiency',
+        effect_label: '销售效率',
+        pct: 0,
+        title: '最优先建议',
+        severity: 'warning',
+        how_to: ['立即落地最优先项的调整动作', '2 周后监控核心指标变化', '形成闭环经验沉淀到运营 SOP'],
+      });
+    }
+  }
+  var alerts = insight.alerts || [];
+  // Also surface findings as alerts for the alerts panel (so they appear if recs branch was used)
+  if (alerts.length === 0 && insight.findings && Array.isArray(insight.findings)) {
+    alerts = insight.findings.map(function(f) { return { severity: 'info', message: f }; });
+  }
   var engineTag = (insight.generated_by && insight.generated_by !== '本地规则引擎')
     ? '<div style="font-size:10px;color:#3b82f6;margin-top:8px;padding-top:8px;border-top:1px dashed var(--gray-100);">引擎: ' + insight.generated_by + '</div>'
     : '';
 
-  // ===== #1: Resource misallocation =====
-  var i1 = document.getElementById('insight-1');
-  if (i1) {
-    var recList = recs.length ? recs.slice(0,3).map(function(r) {
-      var text = typeof r === 'object' ? (r.text || r.action || '') : r;
-      return '<li>' + text + '</li>';
-    }).join('') : '<li>削减停车券预算 60%</li><li>重新分配至高净值业态体验券</li>';
-    var actionRecs = renderActionableRecs(recs, 'coupon_volume', -60, '削减停车券60%');
-    i1.innerHTML =
-      '<p style="font-weight:600;margin-bottom:6px;">核心诊断</p>' +
-      '<p style="font-size:13px;color:var(--gray-600);margin-bottom:10px;line-height:1.6;">' +
-        (insight.executive_summary || '停车券占比过高但核销率极低，资源严重错配。') +
-      '</p>' +
-      '<p style="font-weight:600;margin-bottom:6px;">优化建议</p>' +
-      '<ul style="padding-left:20px;margin:0;font-size:13px;color:var(--gray-600);line-height:1.8;">' + recList + '</ul>' +
-      actionRecs +
-      engineTag;
-  }
+  // ---- Build dynamic cards from recommendations ----
+  var cardsContainer = document.getElementById('insight-cards');
+  if (!cardsContainer) return;
 
-  // ===== #2: Lag window + alerts =====
-  var i2 = document.getElementById('insight-2');
-  if (i2) {
-    var alertHtml = '';
-    if (alerts && alerts.length) {
-      alertHtml = alerts.slice(0, 3).map(function(a) {
-        var color = a.severity === 'critical' ? '#ef4444' : (a.severity === 'warning' ? '#f59e0b' : '#3b82f6');
-        var label = a.severity === 'critical' ? '严重' : (a.severity === 'warning' ? '警告' : '提示');
-        return '<li style="list-style:none;margin-bottom:6px;padding-left:0;"><span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600;color:#fff;background:' + color + ';margin-right:6px;">' + label + '</span>' + a.message + '</li>';
-      }).join('');
+  if (recs.length === 0) {
+    // Distinguish between "still loading" and "no scenarios triggered"
+    if (!insight.generated_by) {
+      cardsContainer.innerHTML = '<div class="panel" style="flex:1 1 100%;"><div class="panel-header"><div class="panel-title">加载中</div></div><div class="panel-body"><p style="font-size:14px;color:var(--gray-400);line-height:1.8;">正在分析数据...</p></div></div>';
     } else {
-      alertHtml = '<li style="list-style:none;color:var(--gray-400);">暂无关键预警</li>';
+      cardsContainer.innerHTML = '<div class="panel" style="flex:1 1 100%;"><div class="panel-header"><div class="panel-title">当前数据健康</div></div><div class="panel-body"><p style="font-size:14px;color:var(--gray-400);line-height:1.8;">当前数据范围内未触发诊断场景，' + (insight.executive_summary || '各项指标处于正常区间。') + '</p></div></div>';
     }
-    i2.innerHTML =
-      '<p style="font-weight:600;margin-bottom:6px;">核心诊断</p>' +
-      '<p style="font-size:13px;color:var(--gray-600);margin-bottom:10px;line-height:1.6;">发券与销售呈弱负相关，当前发券节奏未踩中消费决策时点，滞后效应不明显。</p>' +
-      '<p style="font-weight:600;margin-bottom:6px;">预警清单</p>' +
-      '<ul style="padding-left:0;margin:0;">' + alertHtml + '</ul>' +
-      '<p style="font-weight:600;margin:10px 0 6px 0;">优化建议</p>' +
-      '<p style="font-size:13px;color:var(--gray-600);margin:0;line-height:1.6;">集中发券至最优滞后窗口（消费高峰前 3 天），提升券的转化效率。</p>' +
-      renderActionableRecs(recs, 'lag_correlation', 20, '优化滞后窗口') +
-      engineTag;
+    return;
   }
 
-  // ===== #3: GREEN cohort deep dive =====
-  var i3 = document.getElementById('insight-3');
-  if (i3) {
-    var greenRecs = recs.length > 1 ? recs.slice(1, 4).map(function(r) {
-      var text = typeof r === 'object' ? (r.text || r.action || '') : r;
-      return '<li>' + text + '</li>';
-    }).join('') :
-      '<li>GREEN 客群提升发券频次</li><li>设计专属高额满减体验券</li><li>定向推送高净值业态活动</li>';
-    i3.innerHTML =
-      '<p style="font-weight:600;margin-bottom:6px;">核心诊断</p>' +
-      '<p style="font-size:13px;color:var(--gray-600);margin-bottom:10px;line-height:1.6;">菁英会员/80后是最优 ROI 转化客群，客单价高、核销意愿强，目前投放力度不足。</p>' +
-      '<p style="font-weight:600;margin-bottom:6px;">深挖策略</p>' +
-      '<ul style="padding-left:20px;margin:0;font-size:13px;color:var(--gray-600);line-height:1.8;">' + greenRecs + '</ul>' +
-      renderActionableRecs(recs, 'sales_efficiency', 30, 'GREEN客群加发30%') +
-      engineTag;
+  // Severity → visual mapping
+  var sevMap = {
+    'critical': { dot: 'var(--error)', badge: 'badge-red', label: '严重' },
+    'high':     { dot: 'var(--error)', badge: 'badge-red', label: '严重' },
+    'warning':  { dot: '#f59e0b', badge: 'badge-gold', label: '预警' },
+    'medium':   { dot: '#f59e0b', badge: 'badge-gold', label: '预警' },
+    'info':     { dot: 'var(--info)', badge: 'badge-gray', label: '信息' },
+    'low':      { dot: 'var(--info)', badge: 'badge-gray', label: '信息' },
+    'opportunity': { dot: 'var(--success)', badge: 'badge-green', label: '机会' },
+  };
+
+  var cardsHtml = '';
+  for (var i = 0; i < recs.length; i++) {
+    var r = recs[i];
+    if (typeof r !== 'object') continue;
+
+    var text = r.text || '';
+    var action = r.action || '';
+    var effect = r.effect || 'sales_efficiency';
+    var effectLabel = r.effect_label || ({coupon_volume: '发券量', sales_efficiency: '销售效率', lag_correlation: '滞后效应'})[effect] || '营销效能';
+    var pct = (r.pct != null) ? r.pct : 0;
+    var title = r.title || ('诊断 #' + (i + 1));
+    var howTo = Array.isArray(r.how_to) ? r.how_to : [];
+    var sev = r.severity || 'medium';
+    var sevInfo = sevMap[sev] || sevMap['medium'];
+    var escAction = (action || title).replace(/'/g, "\\'");
+
+    // effect + pct badge (shows the "what dimension + how much")
+    var pctArrow = pct > 0 ? '↑' : (pct < 0 ? '↓' : '—');
+    var pctColor = pct > 0 ? '#10b981' : (pct < 0 ? '#ef4444' : '#9ca3af');
+    var pctText = pct > 0 ? ('+' + pct + '%') : (pct < 0 ? (pct + '%') : '0%');
+    var effectBadge =
+      '<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:10px;font-size:11px;color:var(--gray-600);margin-right:6px;">' +
+        '<span style="font-weight:600;">' + escapeHtml(effectLabel) + '</span>' +
+      '</span>' +
+      '<span style="display:inline-flex;align-items:center;gap:2px;padding:2px 8px;background:' + pctColor + '15;border:1px solid ' + pctColor + '40;border-radius:10px;font-size:11px;font-weight:600;color:' + pctColor + ';">' +
+        pctArrow + ' ' + pctText +
+      '</span>';
+
+    // how_to list
+    var howToHtml = '';
+    if (howTo.length > 0) {
+      howToHtml =
+        '<p style="font-weight:600;margin:12px 0 6px 0;">具体怎么做</p>' +
+        '<ol style="padding-left:20px;margin:0;font-size:12px;color:var(--gray-600);line-height:1.7;">' +
+          howTo.map(function(step) { return '<li style="margin-bottom:4px;">' + escapeHtml(step) + '</li>'; }).join('') +
+        '</ol>';
+    }
+
+    cardsHtml +=
+      '<div class="panel" style="flex:1 1 48%;min-width:320px;">' +
+        '<div class="panel-header">' +
+          '<div class="panel-title" style="display:flex;align-items:center;gap:8px;">' +
+            '<span style="width:8px;height:8px;border-radius:50%;background:' + sevInfo.dot + ';flex-shrink:0;"></span>' +
+            '诊断 #' + (i + 1) + ' · ' + escapeHtml(title) +
+          '</div>' +
+          '<span class="badge ' + sevInfo.badge + '">' + sevInfo.label + '</span>' +
+        '</div>' +
+        '<div class="panel-body">' +
+          '<div style="margin-bottom:10px;">' + effectBadge + '</div>' +
+          '<p style="font-weight:600;margin-bottom:6px;">核心诊断</p>' +
+          '<p style="font-size:13px;color:var(--gray-600);margin-bottom:6px;line-height:1.6;">' + escapeHtml(text) + '</p>' +
+          '<p style="font-weight:600;margin-bottom:6px;">建议动作</p>' +
+          '<div style="font-size:13px;color:var(--gray-600);line-height:1.6;margin-bottom:4px;">' +
+            '<span style="display:inline-block;padding:2px 10px;background:' + sevInfo.dot + '15;border-left:3px solid ' + sevInfo.dot + ';border-radius:2px;">' + escapeHtml(action) + '</span>' +
+          '</div>' +
+          howToHtml +
+          '<button class="btn btn-primary btn-sm" style="margin-top:12px;" onclick="adoptSuggestion(\'' + escAction + '\',\'' + effect + '\',' + pct + ')">采纳建议</button>' +
+          engineTag +
+        '</div>' +
+      '</div>';
   }
 
-  // ===== #4: GOLD strategy / RED melt =====
-  var i4 = document.getElementById('insight-4');
-  if (i4) {
-    i4.innerHTML =
-      '<p style="font-weight:600;margin-bottom:6px;">核心诊断</p>' +
-      '<p style="font-size:13px;color:var(--gray-600);margin-bottom:10px;line-height:1.6;">' +
-        (topFinding || '耗损型客群大量领券但消费极低，正在侵蚀营销预算，建议实施熔断机制。') +
-      '</p>' +
-      '<p style="font-weight:600;margin-bottom:6px;">应对策略</p>' +
-      '<ul style="padding-left:20px;margin:0;font-size:13px;color:var(--gray-600);line-height:1.8;">' +
-        '<li>RED 客群实施发券熔断，限制每人每月 3 张</li>' +
-        '<li>GOLD 客群走体验式营销，避免直接折扣侵蚀毛利</li>' +
-        '<li>关注高消费低核销人群的转化路径</li>' +
-      '</ul>' +
-      renderActionableRecs(recs, 'coupon_volume', -80, 'RED客群熔断') +
-      engineTag;
+  // ---- Alerts section (always present if there are alerts) ----
+  if (alerts && alerts.length > 0) {
+    cardsHtml +=
+      '<div class="panel" style="flex:1 1 100%;">' +
+        '<div class="panel-header">' +
+          '<div class="panel-title" style="display:flex;align-items:center;gap:8px;">' +
+            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--error)" stroke-width="2" style="flex-shrink:0;"><path d="M12 3.5 L20.5 20 L3.5 20 Z" fill="#fff" stroke-linejoin="round"/><text x="12" y="15.5" text-anchor="middle" fill="var(--error)" font-size="11" font-weight="700">!</text></svg>' +
+            '全量预警清单' +
+          '</div>' +
+          '<span style="font-size:12px;color:var(--gray-400);">共 ' + alerts.length + ' 条</span>' +
+        '</div>' +
+        '<div class="panel-body">' +
+          '<ul style="padding-left:0;margin:0;list-style:none;">' +
+            alerts.slice(0, 6).map(function(a) {
+              var color = a.severity === 'critical' ? '#ef4444' : (a.severity === 'warning' ? '#f59e0b' : '#3b82f6');
+              var label = a.severity === 'critical' ? '严重' : (a.severity === 'warning' ? '警告' : '提示');
+              return '<li style="margin-bottom:8px;padding-left:0;display:flex;align-items:flex-start;gap:8px;font-size:13px;color:var(--gray-600);line-height:1.6;">' +
+                '<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600;color:#fff;background:' + color + ';flex-shrink:0;margin-top:2px;">' + label + '</span>' +
+                '<span>' + escapeHtml(a.message || '') + '</span>' +
+              '</li>';
+            }).join('') +
+          '</ul>' +
+        '</div>' +
+      '</div>';
   }
+
+  cardsContainer.innerHTML = cardsHtml;
+}
+
+// Minimal HTML escape to prevent XSS in dynamic card content
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 // ---- FIX 6: Suggested Questions (enhanced) ----
