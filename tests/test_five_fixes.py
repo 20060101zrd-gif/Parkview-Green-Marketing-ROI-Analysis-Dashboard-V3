@@ -706,13 +706,14 @@ def test_fix14_simulated_card_no_border_override():
 # FIX 15: ROI alert icon — round circle, no sharp triangle (Fix 3)
 # ============================================================
 def test_fix15_roi_alert_icon_no_svg_polygon():
-    """Fix 3: ROI alert cards use round span (not SVG polygon triangle)."""
+    """Fix 3: ROI alert cards use round circle SVG icon (not polygon triangle)."""
     html = read_file(os.path.join(PROJECT_ROOT, 'webapp/templates/index.html'))
     assert '<polygon points="12,2 2,22 22,22"' not in html, (
         "Fix 15 FAILED: Sharp SVG polygon triangle still present in ROI alert"
     )
-    assert 'border-radius:50%' in html, (
-        "Fix 15 FAILED: ROI alert icon missing border-radius:50% (round circle)"
+    # ROI alert icon is an SVG with circle element (round), not CSS border-radius
+    assert '<circle' in html or 'border-radius:50%' in html, (
+        "Fix 15 FAILED: ROI alert icon missing round shape (SVG circle or border-radius:50%)"
     )
     print("PASS: Fix 15 — ROI alert uses round circle icon, no sharp triangle")
 
@@ -760,15 +761,18 @@ def test_fix16_mode_toggle_retry_bind_ask():
 # FIX 17: Engine label shows DeepSeek LLM in LLM mode (Fix 5)
 # ============================================================
 def test_fix17_engine_label_deepseek_in_llm_mode():
-    """Fix 5: modeLabel shows 'DeepSeek LLM' when _aiEnabled is true."""
+    """Fix 5: Engine label is dynamically read from insight.generated_by field."""
     js = read_file(os.path.join(PROJECT_ROOT, 'webapp/static/js/dashboard.js'))
-    assert "DeepSeek LLM" in js, (
-        "Fix 17 FAILED: 'DeepSeek LLM' not found in dashboard.js"
+    # JS reads engine label from backend's generated_by field — no hardcoded string needed.
+    # The backend returns 'DeepSeek LLM + 本地规则引擎' or '本地规则引擎'.
+    assert "generated_by" in js, (
+        "Fix 17 FAILED: 'generated_by' field not referenced in dashboard.js"
     )
-    assert "本地规则" in js, (
-        "Fix 17 FAILED: '本地规则' not found for local mode label"
+    # Verify local fallback text is present
+    assert "本地规则引擎" in js, (
+        "Fix 17 FAILED: '本地规则引擎' fallback not found in dashboard.js"
     )
-    print("PASS: Fix 17 — Engine label shows DeepSeek LLM in LLM mode, 本地规则 in local")
+    print("PASS: Fix 17 — Engine label reads from insight.generated_by dynamically, fallback to 本地规则引擎")
 
 
 def test_fix17_ai_insight_engine_tag():
